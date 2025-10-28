@@ -1,12 +1,10 @@
 import logging
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import AsyncGenerator
 from openai import AsyncOpenAI
-from app.database import get_db
 from app.schemas import QuestionRequest
 from app.services.moderation import get_moderation_service
 from app.config import settings
@@ -69,15 +67,11 @@ async def generate_websearch_response(question: str) -> AsyncGenerator[str, None
 
 
 @router.post("/ask-websearch")
-async def ask_websearch(
-    request: QuestionRequest,
-    db: Session = Depends(get_db)
-):
+async def ask_websearch(request: QuestionRequest):
     """Handle user questions with web search via OpenAI
     
     Args:
         request: Question request with user question
-        db: Database session
         
     Returns:
         StreamingResponse with SSE formatted chunks

@@ -3,12 +3,11 @@ import "./SourceCard.css";
 
 function SourceCard({ article, index, similarity_score, compact = false }) {
   const formatDate = (dateString) => {
-    if (!dateString) return "Unknown date";
+    if (!dateString) return "Unknown";
     const date = new Date(dateString);
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
-      year: "numeric",
     }).format(date);
   };
 
@@ -50,20 +49,25 @@ function SourceCard({ article, index, similarity_score, compact = false }) {
       rel="noopener noreferrer"
       className="source-card"
     >
-      <div className="source-badge">[{index}]</div>
-      <h3 className="source-title">{article.title}</h3>
-      <div className="source-meta">
-        <span className="source-name">{article.source}</span>
-        <span className="source-date">
-          {formatDate(article.published_date)}
+      <div className="source-card-content">
+        <span className="source-badge">[{index}]</span>
+        <span className="source-title">{article.title}</span>
+        <span className="source-meta">
+          <span className="source-name">{article.source}</span>
+          <span className="source-separator">•</span>
+          <span className="source-date">
+            {formatDate(article.published_date)}
+          </span>
+          {similarity_score !== undefined && (
+            <>
+              <span className="source-separator">•</span>
+              <span className="similarity-score">
+                {(similarity_score * 100).toFixed(0)}%
+              </span>
+            </>
+          )}
         </span>
       </div>
-      {similarity_score !== undefined && (
-        <div className="similarity-score">
-          Relevance: {(similarity_score * 100).toFixed(0)}%
-        </div>
-      )}
-      <div className="read-link">Read Article →</div>
     </a>
   );
 }
