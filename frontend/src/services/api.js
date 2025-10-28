@@ -1,0 +1,205 @@
+/**
+ * API Service for Crypto News Agent
+ * Handles communication with backend API endpoints
+ */
+
+class CryptoNewsAPI {
+  constructor(baseURL = "/api") {
+    this.baseURL = baseURL;
+  }
+
+  /**
+   * Parse SSE (Server-Sent Events) formatted response
+   * @param {string} eventString - The event string to parse
+   * @returns {object|null} Parsed JSON or null
+   */
+  parseSSEEvent(eventString) {
+    if (!eventString.startsWith("data: ")) {
+      return null;
+    }
+
+    const jsonStr = eventString.slice(6); // Remove 'data: ' prefix
+    try {
+      return JSON.parse(jsonStr);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Ask a question to the semantic search endpoint
+   * @param {string} question - The question to ask
+   * @param {function} onSources - Callback when sources are received
+   * @param {function} onChunk - Callback for each text chunk
+   * @param {function} onComplete - Callback when streaming completes
+   * @param {function} onError - Callback on error
+   * @param {object} options - Additional options (recent_only, top_k)
+   */
+  async askQuestion(
+    question,
+    onSources,
+    onChunk,
+    onComplete,
+    onError,
+    options = {}
+  ) {
+    const { recent_only = true, top_k = 5 } = options;
+
+    try {
+      const response = await fetch(
+        `${this.baseURL}/ask?recent_only=${recent_only}&top_k=${top_k}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ question }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        onError(error.detail || "Failed to process question");
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+
+        // Keep the last incomplete event in the buffer
+        buffer = events.pop() || "";
+
+        for (const event of events) {
+          if (!event.trim()) continue;
+
+          const data = this.parseSSEEvent(event);
+          if (!data) continue;
+
+          if (data.sources) {
+            onSources(data.sources);
+          } else if (data.content) {
+            onChunk(data.content);
+          } else if (data.error) {
+            onError(data.error);
+            break;
+          }
+        }
+      }
+
+      onComplete();
+    } catch (error) {
+      onError(error.message || "Network error");
+    }
+  }
+
+  /**
+   * Ask a question to the web search endpoint
+   * @param {string} question - The question to ask
+   * @param {function} onChunk - Callback for each text chunk
+   * @param {function} onComplete - Callback when streaming completes
+   * @param {function} onError - Callback on error
+   */
+  async askWebSearch(question, onChunk, onComplete, onError) {
+    try {
+      const response = await fetch(`${this.baseURL}/ask-websearch`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ question }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        onError(error.detail || "Failed to process web search");
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+
+        buffer = events.pop() || "";
+
+        for (const event of events) {
+          if (!event.trim()) continue;
+
+          const data = this.parseSSEEvent(event);
+          if (!data) continue;
+
+          if (data.content) {
+            onChunk(data.content);
+          } else if (data.error) {
+            onError(data.error);
+            break;
+          }
+        }
+      }
+
+      onComplete();
+    } catch (error) {
+      onError(error.message || "Network error");
+    }
+  }
+
+  /**
+   * Get index statistics
+   * @returns {Promise<object>} Index statistics
+   */
+  async getIndexStats() {
+    try {
+      const response = await fetch(`${this.baseURL}/index-stats`);
+      if (!response.ok) throw new Error("Failed to fetch index stats");
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching index stats:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Health check
+   * @returns {Promise<object>} Health status
+   */
+  async healthCheck() {
+    try {
+      const response = await fetch(`${this.baseURL}/health`);
+      return await response.json();
+    } catch (error) {
+      console.error("Health check failed:", error);
+      return { status: "unhealthy" };
+    }
+  }
+
+  /**
+   * Get news sources
+   * @returns {Promise<object>} News sources information
+   */
+  async getSources() {
+    try {
+      const response = await fetch(`${this.baseURL}/sources`);
+      if (!response.ok) throw new Error("Failed to fetch sources");
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching sources:", error);
+      return { sources: [] };
+    }
+  }
+}
+
+export const api = new CryptoNewsAPI();

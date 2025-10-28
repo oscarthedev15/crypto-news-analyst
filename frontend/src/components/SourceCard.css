@@ -1,0 +1,88 @@
+.source-card {
+  display: block;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid #475569;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.source-card:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: #60a5fa;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(96, 165, 250, 0.15);
+}
+
+.source-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.source-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}
+
+.source-meta {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.source-name {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.source-date {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.similarity-score {
+  display: inline-block;
+  background: rgba(96, 165, 250, 0.15);
+  color: #93c5fd;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.75rem;
+}
+
+.read-link {
+  color: #60a5fa;
+  font-weight: 500;
+  font-size: 0.9rem;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.source-card:hover .read-link {
+  opacity: 1;
+}
+
+@media (max-width: 640px) {
+  .source-card {
+    padding: 0.875rem;
+  }
+
+  .source-title {
+    font-size: 1rem;
+  }
+}

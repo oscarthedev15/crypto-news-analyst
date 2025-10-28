@@ -1,0 +1,221 @@
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env
+.env.*
+.env.local
+.env.*.local
+.envrc
+*.key
+*.pem
+*.p12
+*.pfx
+*.cer
+*.crt
+secrets/
+credentials/
+*.credentials
+config/local.json
+config/secrets.json
+
+# ==========================================
+# Python
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+celerybeat-schedule
+celerybeat.pid
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv/
+.virtualenv/
+pipenv/
+poetry.lock
+
+# ==========================================
+# IDE & Editors
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+*.code-workspace
+.history/
+
+# ==========================================
+# Node.js / Frontend
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.npm
+.yarn
+.pnp
+.pnp.js
+package-lock.json.backup
+yarn.lock.backup
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.vite/
+
+# Frontend env
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# ==========================================
+# Database Files
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Database data directory
+backend/data/
+data/*.db
+
+# ==========================================
+# FAISS & ML Models
+# ==========================================
+data/faiss.index
+data/article_ids.pkl
+data/article_metadata.pkl
+*.index
+*.pkl
+*.pickle
+models/
+*.h5
+*.pt
+*.pth
+*.onnx
+*.pb
+checkpoints/
+
+# ==========================================
+# Logs & Monitoring
+# ==========================================
+logs/
+*.log
+log/
+*.log.*
+*.out
+*.err
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ==========================================
+# OS Files
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ==========================================
+# Temporary & Cache Files
+# ==========================================
+*.tmp
+*.temp
+*.cache
+.cache/
+tmp/
+temp/
+*.bak
+*.swp
+*.swo
+*~
+
+# ==========================================
+# Testing
+# ==========================================
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+.nyc_output/
+coverage-final.json
+
+# ==========================================
+# Deployment & Docker
+# ==========================================
+docker-compose.override.yml
+.docker/
+*.tar
+*.gz
+*.zip
+
+# ==========================================
+# Project Specific
+# ==========================================
+# Exclude scraped news database
+backend/news_articles.db
+
+# Exclude any local test scripts
+*_local.py
+*_test.sh
+test_*.tmp
