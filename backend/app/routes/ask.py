@@ -25,7 +25,8 @@ async def generate_sse_response(
     question: str,
     db: Session,
     recent_only: bool = True,
-    top_k: int = 5
+    top_k: int = 5,
+    keyword_boost: float = 0.3
 ) -> AsyncGenerator[str, None]:
     """Generate SSE formatted response with streaming LLM chunks
     
@@ -34,6 +35,7 @@ async def generate_sse_response(
         db: Database session
         recent_only: Filter to recent articles (last 30 days)
         top_k: Number of articles to retrieve
+        keyword_boost: Weight for keyword matching (0.0-1.0, default 0.3)
         
     Yields:
         SSE formatted strings
@@ -44,12 +46,13 @@ async def generate_sse_response(
         if recent_only:
             date_filter = datetime.utcnow() - timedelta(days=30)
         
-        # Search for relevant articles
+        # Hybrid search for relevant articles (semantic + keyword)
         search_results = search_service.search(
             question,
             db,
             top_k=top_k,
-            date_filter=date_filter
+            date_filter=date_filter,
+            keyword_boost=keyword_boost
         )
         
         # Extract articles and scores
@@ -95,16 +98,18 @@ async def generate_sse_response(
 async def ask_question(
     request: QuestionRequest,
     db: Session = Depends(get_db),
-    recent_only: bool = Query(True),
-    top_k: int = Query(5)
+    recent_only: bool = Query(True, description="Filter to articles from last 30 days"),
+    top_k: int = Query(5, description="Number of articles to retrieve"),
+    keyword_boost: float = Query(0.3, ge=0.0, le=1.0, description="Keyword matching weight (0.0-1.0, default 0.3 = 30% keyword, 70% semantic)")
 ):
-    """Handle user questions with semantic search and streaming LLM response
+    """Handle user questions with hybrid search (semantic + keyword) and streaming LLM response
     
     Args:
         request: Question request with user question
         db: Database session
-        recent_only: Filter to recent articles (default: True)
+        recent_only: Filter to recent articles (default: True, last 30 days)
         top_k: Number of articles to retrieve (default: 5)
+        keyword_boost: Weight for keyword matching (0.0-1.0, default: 0.3)
         
     Returns:
         StreamingResponse with SSE formatted chunks
@@ -118,7 +123,7 @@ async def ask_question(
     
     # Return streaming response
     return StreamingResponse(
-        generate_sse_response(request.question, db, recent_only, top_k),
+        generate_sse_response(request.question, db, recent_only, top_k, keyword_boost),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
