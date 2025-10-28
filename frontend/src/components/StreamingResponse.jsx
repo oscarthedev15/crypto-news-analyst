@@ -22,24 +22,7 @@ function StreamingResponse({ text, isStreaming, sources, mode }) {
         </span>
       </div>
 
-      {/* Sources (only for database mode) */}
-      {mode === "database" && sources.length > 0 && (
-        <div className="sources-section">
-          <h3 className="sources-title">📚 Sources</h3>
-          <div className="sources-grid">
-            {sources.map((source, idx) => (
-              <SourceCard
-                key={source.id}
-                article={source}
-                index={idx + 1}
-                similarity_score={source.similarity_score}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Response text */}
+      {/* Response text - now shown FIRST */}
       <div className="response-section">
         <h3 className="response-title">💬 Response</h3>
         <div ref={responseRef} className="response-text">
@@ -49,6 +32,24 @@ function StreamingResponse({ text, isStreaming, sources, mode }) {
 
       {/* Loading indicator during streaming */}
       {isStreaming && text && <LoadingIndicator />}
+
+      {/* Sources (only for database mode) - now shown BELOW response */}
+      {mode === "database" && sources.length > 0 && (
+        <div className="sources-section-compact">
+          <h3 className="sources-title-compact">📚 Sources</h3>
+          <div className="sources-list-compact">
+            {sources.map((source, idx) => (
+              <SourceCard
+                key={source.id}
+                article={source}
+                index={idx + 1}
+                similarity_score={source.similarity_score}
+                compact={true}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -109,6 +109,29 @@
   background: #64748b;
 }
 
+/* Compact sources section (shown below response) */
+.sources-section-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.sources-title-compact {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #94a3b8;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sources-list-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 @media (max-width: 768px) {
   .sources-grid {
     grid-template-columns: 1fr;
