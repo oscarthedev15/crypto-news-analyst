@@ -5,7 +5,9 @@ An AI-powered semantic search engine for cryptocurrency news with streaming LLM 
 ## ✨ Features
 
 - **Multi-Source Ingestion**: Automatically scrapes from CoinTelegraph, DL News, and The Defiant
+- **Hybrid Search**: Combines semantic (FAISS embeddings) + keyword matching (BM25) for optimal results
 - **Semantic Search**: FAISS vector database with sentence-transformers for intelligent similarity search
+- **Keyword Boosting**: Adjustable keyword matching weight (30% default) for brand names and specific terms
 - **Streaming LLM Responses**: Real-time GPT-4 responses with source citations
 - **Content Moderation**: Powered by OpenAI's Moderation API for safe queries
 - **Web Search Comparison**: Compare database results with OpenAI's web search
@@ -14,7 +16,7 @@ An AI-powered semantic search engine for cryptocurrency news with streaming LLM 
 
 ## 🛠️ Tech Stack
 
-**Backend:** FastAPI, SQLAlchemy, FAISS, sentence-transformers, httpx, BeautifulSoup, OpenAI API (LLM, web search & moderation), SQLite
+**Backend:** FastAPI, SQLAlchemy, FAISS, BM25 (rank-bm25), sentence-transformers, httpx, BeautifulSoup, OpenAI API (LLM, web search & moderation), SQLite
 
 **Frontend:** React 18, Vite, Modern CSS
 
@@ -50,7 +52,13 @@ cp .env.example .env
 
 ```bash
 # Fetch and index articles (takes 5-10 minutes on first run)
+# This will build both FAISS (semantic) and BM25 (keyword) indexes
 python scripts/ingest_news.py --max-articles-per-source 30
+```
+
+**Note:** If upgrading from a version without hybrid search, rebuild indexes via API:
+```bash
+curl -X POST http://localhost:8000/api/rebuild-index
 ```
 
 ### 3. Start Backend
@@ -81,9 +89,14 @@ Access at `http://localhost:5173`
 
 ### API Endpoints
 
-- `POST /api/ask` - Semantic search (`{"question": "..."}`)
-- `POST /api/ask-websearch` - Web search
+- `POST /api/ask` - Hybrid search with parameters:
+  - `question` (required): User's question
+  - `recent_only` (optional, default: true): Filter to last 30 days
+  - `top_k` (optional, default: 5): Number of results
+  - `keyword_boost` (optional, default: 0.3): Keyword weight (0.0-1.0)
+- `POST /api/ask-websearch` - Web search (OpenAI)
 - `GET /api/index-stats` - Database statistics
+- `POST /api/rebuild-index` - Rebuild search indexes
 - `GET /api/health` - Health check
 - Interactive docs: `http://localhost:8000/docs`
 
@@ -104,14 +117,28 @@ Monitor logs: `tail -f backend/logs/cron.log`
 
 ## 🔍 How It Works
 
-### Semantic Search Pipeline
+### Hybrid Search Pipeline
 
-1. User Question → OpenAI Moderation API check
-2. Generate 384-dim embedding
-3. FAISS search for top-K similar articles
-4. Optional date filtering & score conversion
-5. Build prompt with article context
-6. Stream LLM response with citations
+1. **User Question** → OpenAI Moderation API check
+2. **Semantic Search**: Generate 384-dim embedding → FAISS vector similarity search
+3. **Keyword Search**: Tokenize query → BM25 scoring for exact term matching
+4. **Hybrid Ranking**: Combine scores (default: 70% semantic + 30% keyword)
+5. **Filtering**: Date filtering & relevance threshold
+6. **LLM Context**: Build prompt with top-ranked articles
+7. **Stream Response**: GPT-4 streaming with source citations
+
+### Why Hybrid Search?
+
+Pure semantic search struggles with:
+- **Brand names**: "pump.fun" vs "pumpfun" 
+- **Specific entities**: Company names, protocols, ticker symbols
+- **Exact phrases**: Technical terms that need literal matching
+
+**Hybrid search** solves this by combining:
+- **Semantic similarity** (70%): Understands context and meaning
+- **Keyword matching** (30%): Prioritizes exact term matches
+
+You can adjust the `keyword_boost` parameter (0.0-1.0) via API for different use cases.
 
 ### Web Search Pipeline
 
@@ -148,6 +175,8 @@ Monitor logs: `tail -f backend/logs/cron.log`
 
 **Frontend can't connect:** Ensure backend is running: `curl http://localhost:8000/health`
 
+**Hybrid search not working:** Rebuild indexes: `POST http://localhost:8000/api/rebuild-index`
+
 ## 🚧 Obstacles Overcome
 
 **Web Scraping Challenges:**
@@ -158,6 +187,28 @@ Monitor logs: `tail -f backend/logs/cron.log`
 - CoinTelegraph still in progress (complex HTML structure)
 
 **Key Learnings:** Modern news sites use dynamic class names (Tailwind), requiring DOM inspection over assumptions. User-Agent headers are essential for scraper success.
+
+**Semantic Search Limitations:**
+
+The initial implementation used pure semantic search (FAISS with `all-MiniLM-L6-v2` embeddings), which had critical limitations:
+
+- **Poor performance on brand names**: Query "pump.fun" returned low relevance (42%) even when exact matches existed
+- **Weak exact-term matching**: Embeddings capture *meaning* not *keywords*, so specific entities (protocols, companies, tickers) scored poorly
+- **Context drift**: Articles without the exact term but "semantically similar" ranked higher than exact matches
+- **Low confidence scores**: Most results scored 30-45% relevance, making it hard to trust top results
+
+**Real Example:** Searching "tell me about pump.fun" returned article "Pumpfun Acquires Memecoin Trading Terminal Padre" at only 42% relevance, while a generic memecoin article with no mention scored 40%.
+
+**Solution - Hybrid Search:**
+
+Implemented BM25 keyword matching alongside semantic search:
+- **70% semantic** (FAISS embeddings): Captures context and meaning
+- **30% keyword** (BM25): Prioritizes exact term matches
+- **Configurable**: Adjust `keyword_boost` parameter (0.0-1.0) per query
+
+This is standard in production search systems (Elasticsearch, Pinecone, Weaviate all use hybrid approaches). Pure semantic search alone is rarely optimal for real-world applications.
+
+**Key Learnings:** Semantic embeddings are powerful but insufficient for queries with specific entities. Hybrid search (semantic + keyword) is essential for production-grade search, especially in domains with technical terminology and brand names like crypto.
 
 ## 📚 Future Enhancements
 
