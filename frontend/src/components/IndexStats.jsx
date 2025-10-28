@@ -2,9 +2,9 @@ import React, { useState, useEffect } from "react";
 import { api } from "../services/api";
 import "./IndexStats.css";
 
-function IndexStats() {
+function IndexStats({ compact = false }) {
   const [stats, setStats] = useState(null);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(compact);
 
   useEffect(() => {
     fetchStats();
@@ -44,6 +44,18 @@ function IndexStats() {
   const isStale =
     stats.last_refresh &&
     new Date() - new Date(stats.last_refresh) > 2 * 60 * 60 * 1000;
+
+  // Compact mode - just show summary
+  if (compact) {
+    return (
+      <div className="index-stats-compact">
+        <span className="stats-icon">📊</span>
+        <span className="stats-value">{stats.indexed_articles} articles</span>
+        <span className="stats-separator">•</span>
+        <span className="stats-time">{formatDate(stats.last_refresh)}</span>
+      </div>
+    );
+  }
 
   return (
     <div className={`index-stats ${isCollapsed ? "collapsed" : ""}`}>

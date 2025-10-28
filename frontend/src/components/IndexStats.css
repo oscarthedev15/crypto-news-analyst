@@ -1,3 +1,33 @@
+/* Compact mode for header */
+.index-stats-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.index-stats-compact .stats-icon {
+  font-size: 1rem;
+}
+
+.index-stats-compact .stats-value {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.index-stats-compact .stats-separator {
+  color: #64748b;
+}
+
+.index-stats-compact .stats-time {
+  color: #94a3b8;
+}
+
+/* Regular mode */
 .index-stats {
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid #475569;

@@ -6,6 +6,46 @@
 class CryptoNewsAPI {
   constructor(baseURL = "/api") {
     this.baseURL = baseURL;
+    this.sessionId = this.getOrCreateSessionId();
+  }
+
+  /**
+   * Get or create a session ID from sessionStorage (tab-specific)
+   * @returns {string} Session ID
+   */
+  getOrCreateSessionId() {
+    let sessionId = sessionStorage.getItem("crypto_news_session_id");
+    if (!sessionId) {
+      sessionId = this.generateSessionId();
+      sessionStorage.setItem("crypto_news_session_id", sessionId);
+    }
+    return sessionId;
+  }
+
+  /**
+   * Generate a new session ID
+   * @returns {string} New session ID
+   */
+  generateSessionId() {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Clear current session and create new one
+   */
+  async clearSession() {
+    try {
+      // Delete session on server
+      await fetch(`${this.baseURL}/session/${this.sessionId}`, {
+        method: "DELETE",
+      });
+    } catch (error) {
+      console.error("Error clearing session:", error);
+    }
+
+    // Create new session
+    this.sessionId = this.generateSessionId();
+    sessionStorage.setItem("crypto_news_session_id", this.sessionId);
   }
 
   /**
@@ -27,7 +67,7 @@ class CryptoNewsAPI {
   }
 
   /**
-   * Ask a question to the semantic search endpoint
+   * Ask a question to the semantic search endpoint with session support
    * @param {string} question - The question to ask
    * @param {function} onSources - Callback when sources are received
    * @param {function} onChunk - Callback for each text chunk
@@ -52,6 +92,7 @@ class CryptoNewsAPI {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "X-Session-Id": this.sessionId,
           },
           body: JSON.stringify({ question }),
         }

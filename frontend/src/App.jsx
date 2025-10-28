@@ -1,46 +1,136 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { api } from "./services/api";
 import "./App.css";
 import QuestionInput from "./components/QuestionInput";
-import StreamingResponse from "./components/StreamingResponse";
+import ChatMessage from "./components/ChatMessage";
 import IndexStats from "./components/IndexStats";
-import LoadingIndicator from "./components/LoadingIndicator";
 
 function App() {
-  const [question, setQuestion] = useState("");
-  const [response, setResponse] = useState("");
-  const [sources, setSources] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [searchMode, setSearchMode] = useState("database");
+  const messagesEndRef = useRef(null);
+  const chatContainerRef = useRef(null);
+
+  // Auto-scroll to bottom when new messages arrive
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleSubmitQuestion = async (newQuestion, mode) => {
-    setQuestion(newQuestion);
-    setResponse("");
-    setSources([]);
+    // Add user message
+    const userMessage = {
+      id: Date.now(),
+      role: "user",
+      content: newQuestion,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
     setError("");
     setIsLoading(true);
-    setSearchMode(mode);
+
+    // Create assistant message placeholder
+    const assistantMessageId = Date.now() + 1;
+    const assistantMessage = {
+      id: assistantMessageId,
+      role: "assistant",
+      content: "",
+      sources: [],
+      isStreaming: true,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, assistantMessage]);
 
     try {
       if (mode === "database") {
         await api.askQuestion(
           newQuestion,
-          (sources) => setSources(sources),
-          (chunk) => setResponse((prev) => prev + chunk),
-          () => setIsLoading(false),
-          (error) => {
-            setError(error);
+          (sources) => {
+            // Update assistant message with sources
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId ? { ...msg, sources } : msg
+              )
+            );
+          },
+          (chunk) => {
+            // Append content chunks
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: msg.content + chunk }
+                  : msg
+              )
+            );
+          },
+          () => {
+            // Mark as complete
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, isStreaming: false }
+                  : msg
+              )
+            );
+            setIsLoading(false);
+          },
+          (errorMsg) => {
+            setError(errorMsg);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
+                      content: `Error: ${errorMsg}`,
+                      isStreaming: false,
+                    }
+                  : msg
+              )
+            );
             setIsLoading(false);
           }
         );
       } else if (mode === "websearch") {
         await api.askWebSearch(
           newQuestion,
-          (chunk) => setResponse((prev) => prev + chunk),
-          () => setIsLoading(false),
-          (error) => {
-            setError(error);
+          (chunk) => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, content: msg.content + chunk }
+                  : msg
+              )
+            );
+          },
+          () => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? { ...msg, isStreaming: false }
+                  : msg
+              )
+            );
+            setIsLoading(false);
+          },
+          (errorMsg) => {
+            setError(errorMsg);
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessageId
+                  ? {
+                      ...msg,
+                      content: `Error: ${errorMsg}`,
+                      isStreaming: false,
+                    }
+                  : msg
+              )
+            );
             setIsLoading(false);
           }
         );
@@ -51,54 +141,108 @@ function App() {
     }
   };
 
+  const handleClearChat = async () => {
+    if (
+      window.confirm("Clear chat history? This will start a new conversation.")
+    ) {
+      await api.clearSession();
+      setMessages([]);
+      setError("");
+    }
+  };
+
   return (
     <div className="app">
-      <header className="header">
-        <div className="container">
-          <h1>🚀 Crypto News Agent</h1>
-          <p className="subtitle">
-            AI-powered semantic search over cryptocurrency news
-          </p>
+      <header className="chat-header">
+        <div className="header-content">
+          <div className="header-title">
+            <h1>🚀 Crypto News Agent</h1>
+            <p className="subtitle">AI-powered crypto news assistant</p>
+          </div>
+          <IndexStats compact />
         </div>
       </header>
 
-      <main className="container">
-        <IndexStats />
+      <main className="chat-container" ref={chatContainerRef}>
+        <div className="messages-wrapper">
+          {messages.length === 0 && (
+            <div className="welcome-screen">
+              <div className="welcome-icon">💬</div>
+              <h2>Welcome to Crypto News Agent</h2>
+              <p>Ask me anything about cryptocurrency news!</p>
 
-        {error && (
-          <div className="error-message">
-            <span className="error-icon">⚠️</span>
-            <span>{error}</span>
-          </div>
-        )}
+              <IndexStats />
 
-        <QuestionInput
-          onSubmit={handleSubmitQuestion}
-          disabled={isLoading}
-          defaultMode="database"
-        />
+              <div className="example-questions">
+                <div className="example-label">Try asking:</div>
+                <button
+                  className="example-btn"
+                  onClick={() =>
+                    handleSubmitQuestion(
+                      "What's the latest news about Bitcoin?",
+                      "database"
+                    )
+                  }
+                  disabled={isLoading}
+                >
+                  What's the latest news about Bitcoin?
+                </button>
+                <button
+                  className="example-btn"
+                  onClick={() =>
+                    handleSubmitQuestion(
+                      "Explain Ethereum Layer 2 solutions",
+                      "database"
+                    )
+                  }
+                  disabled={isLoading}
+                >
+                  Explain Ethereum Layer 2 solutions
+                </button>
+                <button
+                  className="example-btn"
+                  onClick={() =>
+                    handleSubmitQuestion("What happened with FTX?", "database")
+                  }
+                  disabled={isLoading}
+                >
+                  What happened with FTX?
+                </button>
+              </div>
+            </div>
+          )}
 
-        {/* Show streaming response during loading OR after completion */}
-        {(response || sources.length > 0) && (
-          <StreamingResponse
-            text={response}
-            isStreaming={isLoading}
-            sources={sources}
-            mode={searchMode}
-          />
-        )}
+          {messages.map((message) => (
+            <ChatMessage key={message.id} message={message} />
+          ))}
 
-        {!isLoading && !response && sources.length === 0 && !error && (
-          <div className="empty-state">
-            <div className="empty-icon">💭</div>
-            <h2>Ask a question about crypto news</h2>
-            <p>Choose between searching our database or searching the web</p>
-          </div>
-        )}
+          {error && (
+            <div className="error-banner">
+              <span className="error-icon">⚠️</span>
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
       </main>
 
-      <footer className="footer">
-        <p>Sources: CoinTelegraph • The Defiant • Decrypt</p>
+      <footer className="chat-footer">
+        <div className="footer-content">
+          <QuestionInput
+            onSubmit={handleSubmitQuestion}
+            disabled={isLoading}
+            defaultMode="database"
+            onClearChat={handleClearChat}
+          />
+          <div className="footer-info">
+            <span>Sources: CoinTelegraph • The Defiant • Decrypt</span>
+            <span>•</span>
+            <span>{messages.length / 2} messages in conversation</span>
+            <span>•</span>
+            <span>Session: {api.sessionId}</span>
+          </div>
+        </div>
       </footer>
     </div>
   );

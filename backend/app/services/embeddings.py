@@ -1,81 +1,83 @@
 from sentence_transformers import SentenceTransformer
-from functools import lru_cache
-import numpy as np
-from typing import List
+from langchain_core.embeddings import Embeddings
 import logging
 
 logger = logging.getLogger(__name__)
 
-class EmbeddingService:
-    """Service for generating text embeddings using sentence-transformers"""
+
+class EmbeddingService(Embeddings):
+    """Custom LangChain-compatible embeddings using sentence-transformers
+    
+    This wraps sentence-transformers in a LangChain-compatible interface
+    """
     
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+        """Initialize embedding service
+        
+        Args:
+            model_name: Name of the sentence-transformers model to use
+        """
         self.model_name = model_name
-        self.model = self._load_model()
-        self.dimension = self.get_embedding_dimension()
-    
-    @lru_cache(maxsize=1)
-    def _load_model(self) -> SentenceTransformer:
-        """Load and cache the sentence-transformers model"""
         logger.info(f"Loading embedding model: {self.model_name}")
-        model = SentenceTransformer(self.model_name)
-        logger.info(f"Model loaded successfully. Dimension: {model.get_sentence_embedding_dimension()}")
-        return model
+        
+        # Use sentence-transformers directly (stable, no segfaults)
+        self.model = SentenceTransformer(model_name)
+        logger.info(f"Model loaded successfully")
     
-    def generate_embedding(self, text: str) -> np.ndarray:
-        """Generate embedding for a single text string
+    def embed_query(self, text: str) -> list:
+        """Generate embedding for a query text (LangChain interface)
         
         Args:
             text: Text to embed
             
         Returns:
-            numpy array of shape (384,)
+            List of floats representing the embedding
         """
         if not text or not isinstance(text, str):
-            return np.zeros(self.dimension, dtype=np.float32)
+            logger.warning("Empty or invalid text provided for embedding")
+            return []
         
         try:
             embedding = self.model.encode(text, convert_to_numpy=True)
-            return embedding.astype(np.float32)
+            return embedding.tolist()
         except Exception as e:
-            logger.error(f"Error generating embedding: {e}")
-            return np.zeros(self.dimension, dtype=np.float32)
+            logger.error(f"Error generating query embedding: {e}")
+            return []
     
-    def generate_embeddings_batch(self, texts: List[str]) -> np.ndarray:
-        """Generate embeddings for multiple texts efficiently
+    def embed_documents(self, texts: list) -> list:
+        """Generate embeddings for multiple documents (LangChain interface)
         
         Args:
             texts: List of texts to embed
             
         Returns:
-            numpy array of shape (len(texts), 384)
+            List of embeddings (each embedding is a list of floats)
         """
         if not texts:
-            return np.zeros((0, self.dimension), dtype=np.float32)
+            return []
         
         try:
             # Filter out invalid texts
-            valid_texts = [t if isinstance(t, str) else "" for t in texts]
+            valid_texts = [t if isinstance(t, str) and t else "" for t in texts]
             
-            # Generate embeddings
+            # Generate embeddings in batch
             embeddings = self.model.encode(
                 valid_texts,
                 convert_to_numpy=True,
-                show_progress_bar=False
+                show_progress_bar=False,
+                normalize_embeddings=True
             )
             
-            return embeddings.astype(np.float32)
+            # Convert to list of lists for LangChain compatibility
+            return [emb.tolist() for emb in embeddings]
         except Exception as e:
             logger.error(f"Error generating batch embeddings: {e}")
-            return np.zeros((len(texts), self.dimension), dtype=np.float32)
-    
-    def get_embedding_dimension(self) -> int:
-        """Get the dimension of embeddings produced by this model"""
-        return self.model.get_sentence_embedding_dimension()
+            return []
 
 
 # Singleton instance
 _embedding_service = None
+
 
 def get_embedding_service(model_name: str = "all-MiniLM-L6-v2") -> EmbeddingService:
     """Get or create the embedding service singleton"""
