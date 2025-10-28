@@ -1,14 +1,14 @@
 from sentence_transformers import SentenceTransformer
-from langchain_core.embeddings import Embeddings
+import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class EmbeddingService(Embeddings):
-    """Custom LangChain-compatible embeddings using sentence-transformers
+class EmbeddingService:
+    """Custom embeddings service using sentence-transformers
     
-    This wraps sentence-transformers in a LangChain-compatible interface
+    Provides efficient embedding generation for search functionality
     """
     
     def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
@@ -24,37 +24,37 @@ class EmbeddingService(Embeddings):
         self.model = SentenceTransformer(model_name)
         logger.info(f"Model loaded successfully")
     
-    def embed_query(self, text: str) -> list:
-        """Generate embedding for a query text (LangChain interface)
+    def generate_embedding(self, text: str) -> 'numpy.ndarray':
+        """Generate embedding for a single text (used by SearchService)
         
         Args:
             text: Text to embed
             
         Returns:
-            List of floats representing the embedding
+            Numpy array representing the embedding
         """
         if not text or not isinstance(text, str):
             logger.warning("Empty or invalid text provided for embedding")
-            return []
+            return np.array([])
         
         try:
-            embedding = self.model.encode(text, convert_to_numpy=True)
-            return embedding.tolist()
+            embedding = self.model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+            return embedding
         except Exception as e:
-            logger.error(f"Error generating query embedding: {e}")
-            return []
+            logger.error(f"Error generating embedding: {e}")
+            return np.array([])
     
-    def embed_documents(self, texts: list) -> list:
-        """Generate embeddings for multiple documents (LangChain interface)
+    def generate_embeddings_batch(self, texts: list) -> 'numpy.ndarray':
+        """Generate embeddings for multiple texts (used by SearchService)
         
         Args:
             texts: List of texts to embed
             
         Returns:
-            List of embeddings (each embedding is a list of floats)
+            Numpy array of embeddings (shape: [num_texts, embedding_dim])
         """
         if not texts:
-            return []
+            return np.array([])
         
         try:
             # Filter out invalid texts
@@ -68,11 +68,11 @@ class EmbeddingService(Embeddings):
                 normalize_embeddings=True
             )
             
-            # Convert to list of lists for LangChain compatibility
-            return [emb.tolist() for emb in embeddings]
+            # Return as numpy array for SearchService compatibility
+            return embeddings
         except Exception as e:
             logger.error(f"Error generating batch embeddings: {e}")
-            return []
+            return np.array([])
 
 
 # Singleton instance
