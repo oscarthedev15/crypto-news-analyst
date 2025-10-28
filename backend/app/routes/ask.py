@@ -99,7 +99,7 @@ async def ask_question(
     request: QuestionRequest,
     db: Session = Depends(get_db),
     recent_only: bool = Query(True, description="Filter to articles from last 30 days"),
-    top_k: int = Query(5, description="Number of articles to retrieve"),
+    top_k: int = Query(5, ge=1, le=20, description="Number of articles to retrieve (1-20)"),
     keyword_boost: float = Query(0.3, ge=0.0, le=1.0, description="Keyword matching weight (0.0-1.0, default 0.3 = 30% keyword, 70% semantic)")
 ):
     """Handle user questions with hybrid search (semantic + keyword) and streaming LLM response
