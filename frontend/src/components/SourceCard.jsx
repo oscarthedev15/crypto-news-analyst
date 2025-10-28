@@ -1,7 +1,7 @@
 import React from "react";
 import "./SourceCard.css";
 
-function SourceCard({ article, index, similarity_score }) {
+function SourceCard({ article, index, similarity_score, compact = false }) {
   const formatDate = (dateString) => {
     if (!dateString) return "Unknown date";
     const date = new Date(dateString);
@@ -12,6 +12,37 @@ function SourceCard({ article, index, similarity_score }) {
     }).format(date);
   };
 
+  // Compact row layout
+  if (compact) {
+    return (
+      <a
+        href={article.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="source-card-compact"
+      >
+        <span className="source-badge-compact">[{index}]</span>
+        <span className="source-title-compact">{article.title}</span>
+        <span className="source-meta-compact">
+          <span className="source-name-compact">{article.source}</span>
+          <span className="source-separator">•</span>
+          <span className="source-date-compact">
+            {formatDate(article.published_date)}
+          </span>
+          {similarity_score !== undefined && (
+            <>
+              <span className="source-separator">•</span>
+              <span className="similarity-score-compact">
+                {(similarity_score * 100).toFixed(0)}%
+              </span>
+            </>
+          )}
+        </span>
+      </a>
+    );
+  }
+
+  // Original card layout (for future use if needed)
   return (
     <a
       href={article.url}
