@@ -9,12 +9,46 @@ const ChatMessage = ({ message }) => {
   // Clean up markdown content to remove excessive line breaks
   const cleanMarkdownContent = (text) => {
     if (!text) return text;
-    
+
     // Remove excessive line breaks (more than 2 consecutive)
     return text
-      .replace(/\n{3,}/g, '\n\n') // Replace 3+ line breaks with 2
-      .replace(/^\s+|\s+$/g, '') // Trim leading/trailing whitespace
-      .replace(/\n\s*\n\s*\n/g, '\n\n'); // Clean up multiple empty lines
+      .replace(/\n{3,}/g, "\n\n") // Replace 3+ line breaks with 2
+      .replace(/^\s+|\s+$/g, "") // Trim leading/trailing whitespace
+      .replace(/\n\s*\n\s*\n/g, "\n\n"); // Clean up multiple empty lines
+  };
+
+  // Extract cited article numbers from the response content
+  const getCitedArticleNumbers = (text) => {
+    if (!text) return new Set();
+
+    // Match patterns like [Article 1], [Article 2], etc.
+    const matches = text.match(/\[Article\s+(\d+)\]/gi);
+    if (!matches) return new Set();
+
+    return new Set(
+      matches
+        .map((match) => {
+          const num = match.match(/\d+/);
+          return num ? parseInt(num[0]) : null;
+        })
+        .filter((num) => num !== null)
+    );
+  };
+
+  // Filter sources to only show those that are actually cited
+  const getUsedSources = () => {
+    if (!sources || sources.length === 0 || !content) return [];
+
+    const citedNumbers = getCitedArticleNumbers(content);
+    if (citedNumbers.size === 0) return []; // Don't show any sources if none are cited
+
+    return sources
+      .map((source, index) => ({ source, originalIndex: index + 1 }))
+      .filter(({ originalIndex }) => citedNumbers.has(originalIndex))
+      .sort(
+        (a, b) =>
+          (b.source.similarity_score || 0) - (a.source.similarity_score || 0)
+      );
   };
 
   return (
@@ -31,26 +65,30 @@ const ChatMessage = ({ message }) => {
             {isStreaming && <span className="typing-indicator">▊</span>}
           </div>
 
-          {sources && sources.length > 0 && !isStreaming && (
-            <div className="message-sources">
-              <div className="sources-label">📚 Sources ({sources.length})</div>
-              <div className="sources-list">
-                {sources
-                  .sort(
-                    (a, b) =>
-                      (b.similarity_score || 0) - (a.similarity_score || 0)
-                  )
-                  .map((source, index) => (
-                    <SourceCard
-                      key={source.id}
-                      article={source}
-                      index={index + 1}
-                      similarity_score={source.similarity_score}
-                    />
-                  ))}
-              </div>
-            </div>
-          )}
+          {(() => {
+            const usedSources = getUsedSources();
+            return (
+              usedSources.length > 0 &&
+              !isStreaming && (
+                <div className="message-sources">
+                  <div className="sources-label">
+                    📚 Sources ({usedSources.length})
+                  </div>
+                  <div className="sources-list-compact">
+                    {usedSources.map(({ source, originalIndex }) => (
+                      <SourceCard
+                        key={source.id}
+                        article={source}
+                        index={originalIndex}
+                        similarity_score={source.similarity_score}
+                        compact={true}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )
+            );
+          })()}
         </div>
       </div>
     </div>

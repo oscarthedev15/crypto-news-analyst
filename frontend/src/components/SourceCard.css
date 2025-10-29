@@ -81,15 +81,15 @@
 .source-card-compact {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.875rem;
-  background: rgba(30, 41, 59, 0.4);
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(30, 41, 59, 0.3);
   border: 1px solid #334155;
   border-radius: 0.5rem;
   text-decoration: none;
   color: inherit;
   transition: all 0.2s ease;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
 }
 
 .source-card-compact:hover {
@@ -102,7 +102,7 @@
   flex-shrink: 0;
   color: #60a5fa;
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
 .source-title-compact {
@@ -112,7 +112,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
 }
 
 .source-meta-compact {
@@ -120,7 +120,7 @@
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 
 .source-name-compact {
