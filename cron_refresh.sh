@@ -143,6 +143,9 @@ fi
 # Create logs directory if it doesn't exist
 mkdir -p logs
 
+# Clear the log file at the start of each run (only keep latest run)
+> logs/cron.log
+
 # Run the ingestion script
 python scripts/ingest_news.py --max-articles-per-source 25 >> logs/cron.log 2>&1
 

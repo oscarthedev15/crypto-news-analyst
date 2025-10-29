@@ -1,19 +1,26 @@
 """
 Modular news scraper service with source validation and duplicate prevention.
-Generic implementation that works across different news sites without custom logic.
+Site-aware implementation that understands each source's URL structure.
 
 Design Principles:
 -----------------
-1. DOMAIN-AGNOSTIC: No hardcoded logic for specific websites
+1. SITE-AWARE: Validates URLs based on known patterns for each source
 2. CONFIGURATION-DRIVEN: Add new sources by updating config dicts
-3. GENERIC HEURISTICS: Uses patterns that work across all news sites
+3. PATTERN-BASED: Uses site-specific URL validation for accuracy
 4. DUPLICATE-AWARE: Skips articles already in database
 
 How to Add a New Source:
 ------------------------
-1. Add domain to APPROVED_SOURCES dict with a display name
-2. (Optional) If source doesn't use root domain as homepage, add to SOURCE_HOMEPAGES
-3. That's it! No custom code needed.
+STEP 1: Analyze the website structure
+   - Visit the site and examine article URLs
+   - Identify the article URL pattern (e.g., /news/[long-slug])
+   - Note category/aggregation pages to avoid (e.g., /news/defi, /markets)
+   - Check how path depth indicates article vs category
+
+STEP 2: Add configuration
+   1. Add domain to APPROVED_SOURCES dict with display name
+   2. Add homepage URL to SOURCE_HOMEPAGES (where to start scraping)
+   3. Add URL pattern to SOURCE_PATTERNS (how to identify real articles)
 
 Example:
     APPROVED_SOURCES = {
@@ -21,15 +28,24 @@ Example:
     }
     
     SOURCE_HOMEPAGES = {
-        "example-news.com": "https://example-news.com/latest/",  # if not using root
+        "example-news.com": "https://example-news.com/latest/",
+    }
+    
+    SOURCE_PATTERNS = {
+        "example-news.com": {
+            "article_prefixes": ["/news/", "/articles/"],  # Valid article path prefixes
+            "min_slug_length": 20,  # Minimum chars in final slug (articles are descriptive)
+            "excluded_segments": ["defi", "markets", "opinion"],  # Category names to skip
+        }
     }
 
-The scraper will:
-- Fetch the homepage (or custom starting page)
-- Extract all links using generic heuristics
-- Filter by domain and article patterns
-- Scrape each article's content
-- Skip duplicates automatically
+Key Obstacle: Website Structure Understanding
+---------------------------------------------
+Different news sites organize content differently:
+- Some use /news/[article-slug] (CoinTelegraph)
+- Others use /articles/[category]/[article-slug] (DLNews)
+- Path depth alone isn't enough - need to check slug length and category names
+- Short segments (< 15 chars) are usually categories, not article titles
 """
 
 import logging
@@ -44,18 +60,48 @@ from urllib.parse import urlparse, urljoin
 logger = logging.getLogger(__name__)
 
 # Configuration for approved crypto news sources
-# To add a new source, just add its domain and name - no custom code needed!
 APPROVED_SOURCES = {
     "cointelegraph.com": "CoinTelegraph",
     "thedefiant.io": "TheDefiant",
     "dlnews.com": "DLNews",
 }
 
-# Custom homepage URLs for sources that don't use the root domain
-# If not specified here, defaults to https://{domain}/
+# Custom homepage URLs for sources (where to start scraping)
 SOURCE_HOMEPAGES = {
     "cointelegraph.com": "https://cointelegraph.com/category/latest-news",
+    "thedefiant.io": "https://thedefiant.io/",
     "dlnews.com": "https://www.dlnews.com/articles/",
+}
+
+# Site-specific URL patterns for accurate article identification
+# This is the key to avoiding category pages and finding real articles
+SOURCE_PATTERNS = {
+    "cointelegraph.com": {
+        # CoinTelegraph: Articles are /news/[long-descriptive-slug]
+        # Example: /news/don-t-buy-the-meme-warns-cz-as-bizarre-golden-statue-memecoin-crashes-86
+        "article_prefixes": ["/news/"],
+        "excluded_prefixes": ["/magazine/", "/learn/", "/price-indexes/", "/people/", "/category/"],
+        "min_path_segments": 2,  # Must be at least /news/slug
+        "min_slug_length": 20,  # Article slugs are long and descriptive
+    },
+    "dlnews.com": {
+        # DLNews: Articles are /articles/[category]/[long-slug]
+        # Example: /articles/opinion/code-is-law-documentary-is-worth-a-watch-despite-omissions
+        # Example: /articles/markets/the-fed-seen-to-cut-twice-in-2025-what-it-means-for-crypto
+        "article_prefixes": ["/articles/"],
+        "min_path_segments": 3,  # Must be at least /articles/category/slug
+        "min_slug_length": 20,  # Last segment must be a long article slug
+        # Category pages are like /articles/defi/ or /articles/markets/ (only 2 segments)
+    },
+    "thedefiant.io": {
+        # TheDefiant: Articles are /news/[category]/[long-slug]
+        # Example: /news/defi/tokenized-nasdaq-futures-enter-top-10-by-volume-on-hyperliquid
+        "article_prefixes": ["/news/"],
+        "excluded_prefixes": ["/podcasts-and-videos/"],
+        "min_path_segments": 3,  # Must be at least /news/category/slug
+        "min_slug_length": 20,  # Last segment must be a long article slug
+        # Category pages are like /news/defi/ (short slug after category)
+    },
 }
 
 # Headers to avoid bot detection (mimics real browser)
@@ -118,67 +164,99 @@ def get_domain(url: str) -> str:
 
 
 def looks_like_article(url: str, base_domain: str) -> bool:
-    """Generic heuristic to determine if URL looks like an article (not a category/tag/author page)
+    """Site-aware validation to determine if URL is an article (not a category/tag/author page)
+    
+    Uses SOURCE_PATTERNS configuration to validate URLs based on known patterns for each source.
     
     Args:
         url: URL to check
-        base_domain: Base domain of the site
+        base_domain: Base domain of the site (e.g., "cointelegraph.com")
         
     Returns:
-        True if URL likely points to an article
+        True if URL matches the article pattern for this source
     """
     # Must be from the same domain
     if base_domain not in url:
         return False
     
+    # Get pattern config for this source
+    if base_domain not in SOURCE_PATTERNS:
+        logger.warning(f"No URL pattern configured for {base_domain}, using fallback validation")
+        return _fallback_article_check(url)
+    
+    pattern = SOURCE_PATTERNS[base_domain]
+    
     # Parse URL
     parsed = urlparse(url)
-    path = parsed.path.lower().strip('/')
+    path = parsed.path.strip('/')
     
     # Empty path = homepage
     if not path:
         return False
     
-    # Articles typically have meaningful path depth (at least 2 segments)
-    # e.g., /news/article-title or /2024/01/article or /123456/article-slug
+    # Check if path starts with any excluded prefix (e.g., /magazine/, /podcasts-and-videos/)
+    if "excluded_prefixes" in pattern:
+        for excluded in pattern["excluded_prefixes"]:
+            if path.startswith(excluded.lstrip('/')):
+                logger.debug(f"URL excluded by prefix {excluded}: {url}")
+                return False
+    
+    # Check if path starts with a valid article prefix (e.g., /news/, /articles/)
+    if "article_prefixes" in pattern:
+        has_valid_prefix = any(
+            path.startswith(prefix.lstrip('/'))
+            for prefix in pattern["article_prefixes"]
+        )
+        if not has_valid_prefix:
+            logger.debug(f"URL missing required prefix: {url}")
+            return False
+    
+    # Check minimum path segments (depth)
+    path_segments = [seg for seg in path.split('/') if seg]
+    min_segments = pattern.get("min_path_segments", 2)
+    
+    if len(path_segments) < min_segments:
+        logger.debug(f"URL has {len(path_segments)} segments, need {min_segments}: {url}")
+        return False
+    
+    # Check last segment (the article slug) is long enough
+    # Real articles have descriptive slugs, categories have short names
+    last_segment = path_segments[-1]
+    min_slug_length = pattern.get("min_slug_length", 15)
+    
+    if len(last_segment) < min_slug_length:
+        logger.debug(f"URL slug too short ({len(last_segment)} < {min_slug_length}): {url}")
+        return False
+    
+    # All checks passed - this looks like an article
+    return True
+
+
+def _fallback_article_check(url: str) -> bool:
+    """Fallback heuristic for sources without specific patterns configured
+    
+    Args:
+        url: URL to check
+        
+    Returns:
+        True if URL appears to be an article
+    """
+    parsed = urlparse(url)
+    path = parsed.path.lower().strip('/')
+    
+    if not path:
+        return False
+    
     path_segments = [seg for seg in path.split('/') if seg]
     
+    # Need at least 2 segments
     if len(path_segments) < 2:
         return False
     
-    # Check first-level path segment for non-article patterns
-    # This is more precise than substring matching
-    # Note: 'news' and 'articles' are allowed as first segments (e.g., /news/article-title)
-    first_segment = path_segments[0].lower()
-    non_article_segments = [
-        'category', 'categories', 'tag', 'tags', 
-        'author', 'authors', 'page', 'search', 
-        'about', 'contact', 'privacy', 'terms', 'subscribe',
-        'login', 'register', 'account', 'profile',
-        'archive', 'sitemap', 'feed', 'rss',
-        'price', 'prices', 'markets',  # Crypto-specific price pages
-        'latest-news', 'breaking-news', 'all-news',  # News aggregation pages
-        'topic', 'topics', 'collections',  # Aggregation/collection pages
-        'podcasts', 'videos', 'newsletter', 'newsletters',  # Non-article content
-        'education', 'podcast', 'video',  # Educational/multimedia content
-    ]
-    
-    if first_segment in non_article_segments:
+    # Last segment should be reasonably long (descriptive article slug)
+    if len(path_segments[-1]) < 20:
         return False
     
-    # Check if path EXACTLY ends with index/aggregation patterns (not /news/article but /news)
-    # This catches /news, /articles, /posts when they're standalone, not /news/article-title
-    path_lower = path.lower()
-    if path_lower in ['news', 'articles', 'posts', 'blog']:
-        return False
-    
-    # Articles typically don't end with trailing slash indicating index pages
-    # unless they're actually article URLs
-    if url.endswith('/') and len(path_segments) < 3:
-        # Could be category page like /news/ or /category/
-        return False
-    
-    # If we got here, it's likely an article
     return True
 
 
@@ -448,6 +526,9 @@ async def fetch_articles_from_source(
             
             logger.info(f"Found {len(potential_article_links)} potential NEW article links on {source_name} homepage")
             
+            # Track rejection reasons for debugging
+            rejections = {"title": 0, "content": 0, "http_error": 0, "other": 0}
+            
             # Fetch each article until we have enough
             for url in potential_article_links[:max_articles * 3]:  # Try more than needed in case some fail
                 if len(articles) >= max_articles:
@@ -469,6 +550,7 @@ async def fetch_articles_from_source(
                     
                     if not title or len(title) < 10:
                         logger.debug(f"Skipping article with invalid title: {url}")
+                        rejections["title"] += 1
                         continue
                     
                     # Extract content
@@ -476,6 +558,7 @@ async def fetch_articles_from_source(
                     
                     if len(content) < 100:
                         logger.debug(f"Skipping article with insufficient content ({len(content)} chars): {url}")
+                        rejections["content"] += 1
                         continue
                     
                     # Extract date
@@ -496,12 +579,20 @@ async def fetch_articles_from_source(
                         logger.warning(f"403 Forbidden for {url} - site may be blocking scrapers")
                     else:
                         logger.debug(f"HTTP error {e.response.status_code} for {url}")
+                    rejections["http_error"] += 1
                     continue
                 except Exception as e:
                     logger.debug(f"Error fetching article {url}: {e}")
+                    rejections["other"] += 1
                     continue
             
-            logger.info(f"✓ Successfully fetched {len(articles)} NEW articles from {source_name}")
+            # Log summary with rejection reasons
+            total_rejected = sum(rejections.values())
+            if total_rejected > 0:
+                rejection_summary = ", ".join([f"{count} {reason}" for reason, count in rejections.items() if count > 0])
+                logger.info(f"✓ Successfully fetched {len(articles)} NEW articles from {source_name} (rejected {total_rejected}: {rejection_summary})")
+            else:
+                logger.info(f"✓ Successfully fetched {len(articles)} NEW articles from {source_name}")
             
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 403:

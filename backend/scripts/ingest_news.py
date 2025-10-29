@@ -30,6 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Reduce httpx logging verbosity (avoid 301 redirect noise)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
     """Fetch and ingest articles from all sources
