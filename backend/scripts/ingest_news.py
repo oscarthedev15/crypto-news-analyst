@@ -39,7 +39,7 @@ async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
     
     Args:
         max_articles: Max NEW articles per source to fetch
-        force_rebuild: Force rebuild of FAISS index
+        force_rebuild: Force rebuild of FAISS index (unused - index is always rebuilt after ingestion)
     """
     logger.info(f"Starting article ingestion (max {max_articles} NEW per source)...")
     

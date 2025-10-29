@@ -1,7 +1,6 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
 from app.config import settings
 from app.database import init_db
 from app.services.search import get_search_service

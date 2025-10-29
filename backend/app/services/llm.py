@@ -2,7 +2,6 @@ import logging
 import httpx
 from typing import List, AsyncGenerator, Optional
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
-from langchain_core.language_models.chat_models import BaseChatModel
 from app.models import Article
 from app.config import settings
 

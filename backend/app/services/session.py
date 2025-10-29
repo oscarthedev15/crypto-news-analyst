@@ -80,28 +80,6 @@ class SessionManager:
         
         logger.debug(f"Added {role} message to session {session_id}")
     
-    def get_chat_history(self, session_id: str) -> list:
-        """Get formatted chat history for a session
-        
-        Args:
-            session_id: Session identifier
-            
-        Returns:
-            List of message dicts with role and content
-        """
-        if session_id not in self._sessions:
-            return []
-        
-        messages = self._sessions[session_id]["messages"]
-        
-        return [
-            {
-                "role": "user" if isinstance(msg, HumanMessage) else "assistant",
-                "content": msg.content
-            }
-            for msg in messages
-        ]
-    
     def clear_session(self, session_id: str):
         """Clear a specific session
         

@@ -1,6 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional
 
 class QuestionRequest(BaseModel):
     """Validate user question input"""
@@ -24,16 +23,6 @@ class ArticleSchema(BaseModel):
     
     class Config:
         from_attributes = True
-
-class ArticleWithScore(BaseModel):
-    """Article with similarity score"""
-    article: ArticleSchema
-    similarity_score: float = Field(..., ge=0.0, le=1.0)
-
-class ErrorResponse(BaseModel):
-    """Error response format"""
-    detail: str
-    error_code: Optional[str] = None
 
 class IndexStats(BaseModel):
     """Statistics about the search index"""
