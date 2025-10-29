@@ -57,6 +57,7 @@ python scripts/ingest_news.py --max-articles-per-source 30
 ```
 
 **Note:** If upgrading from a version without hybrid search, rebuild indexes via API:
+
 ```bash
 curl -X POST http://localhost:8000/api/rebuild-index
 ```
@@ -89,12 +90,16 @@ Access at `http://localhost:5173`
 
 ### API Endpoints
 
-- `POST /api/ask` - Hybrid search with parameters:
-  - `question` (required): User's question
-  - `recent_only` (optional, default: true): Filter to last 30 days
-  - `top_k` (optional, default: 5): Number of results
-  - `keyword_boost` (optional, default: 0.3): Keyword weight (0.0-1.0)
+- `POST /api/ask` - Hybrid search with chat history support:
+  - Headers: `X-Session-Id` (optional): Session ID for conversation context
+  - Parameters:
+    - `question` (required): User's question
+    - `recent_only` (optional, default: true): Filter to last 30 days
+    - `top_k` (optional, default: 5): Number of results
+    - `keyword_boost` (optional, default: 0.3): Keyword weight (0.0-1.0)
 - `POST /api/ask-websearch` - Web search (OpenAI)
+- `DELETE /api/session/{session_id}` - Clear chat session
+- `GET /api/sessions/stats` - Active session statistics (debug)
 - `GET /api/index-stats` - Database statistics
 - `POST /api/rebuild-index` - Rebuild search indexes
 - `GET /api/health` - Health check
@@ -130,11 +135,13 @@ Monitor logs: `tail -f backend/logs/cron.log`
 ### Why Hybrid Search?
 
 Pure semantic search struggles with:
-- **Brand names**: "pump.fun" vs "pumpfun" 
+
+- **Brand names**: "pump.fun" vs "pumpfun"
 - **Specific entities**: Company names, protocols, ticker symbols
 - **Exact phrases**: Technical terms that need literal matching
 
 **Hybrid search** solves this by combining:
+
 - **Semantic similarity** (70%): Understands context and meaning
 - **Keyword matching** (30%): Prioritizes exact term matches
 
@@ -193,7 +200,7 @@ You can adjust the `keyword_boost` parameter (0.0-1.0) via API for different use
 The initial implementation used pure semantic search (FAISS with `all-MiniLM-L6-v2` embeddings), which had critical limitations:
 
 - **Poor performance on brand names**: Query "pump.fun" returned low relevance (42%) even when exact matches existed
-- **Weak exact-term matching**: Embeddings capture *meaning* not *keywords*, so specific entities (protocols, companies, tickers) scored poorly
+- **Weak exact-term matching**: Embeddings capture _meaning_ not _keywords_, so specific entities (protocols, companies, tickers) scored poorly
 - **Context drift**: Articles without the exact term but "semantically similar" ranked higher than exact matches
 - **Low confidence scores**: Most results scored 30-45% relevance, making it hard to trust top results
 
@@ -202,6 +209,7 @@ The initial implementation used pure semantic search (FAISS with `all-MiniLM-L6-
 **Solution - Hybrid Search:**
 
 Implemented BM25 keyword matching alongside semantic search:
+
 - **70% semantic** (FAISS embeddings): Captures context and meaning
 - **30% keyword** (BM25): Prioritizes exact term matches
 - **Configurable**: Adjust `keyword_boost` parameter (0.0-1.0) per query
@@ -209,6 +217,51 @@ Implemented BM25 keyword matching alongside semantic search:
 This is standard in production search systems (Elasticsearch, Pinecone, Weaviate all use hybrid approaches). Pure semantic search alone is rarely optimal for real-world applications.
 
 **Key Learnings:** Semantic embeddings are powerful but insufficient for queries with specific entities. Hybrid search (semantic + keyword) is essential for production-grade search, especially in domains with technical terminology and brand names like crypto.
+
+## 🏗️ Design Considerations
+
+### Chat History & Session Management
+
+**Current Implementation (MVP):**
+
+- **In-memory storage**: Sessions stored in Python dictionary with 60-minute auto-expiration
+- **Session isolation**: Each browser tab gets unique session ID (stored in sessionStorage)
+- **Conversation context**: LLM receives full chat history for contextual responses
+- **Automatic cleanup**: Expired sessions removed periodically to prevent memory bloat
+
+**Trade-offs:**
+
+- ✅ **Pros**: Zero infrastructure, instant reads/writes, simple implementation
+- ❌ **Cons**: Lost on server restart, not suitable for multi-server deployments
+
+**Production Recommendations:**
+
+For production deployments, consider these alternatives based on scale:
+
+1. **SQLite Database** (Single server, < 100 concurrent users)
+   - Add `ChatHistory` table to existing SQLite database
+   - Persist conversations across restarts
+   - Easy to implement, minimal overhead
+2. **Redis** (Multi-server, < 10K concurrent users)
+   - Fast in-memory cache with persistence
+   - TTL-based expiration built-in
+   - Supports distributed deployments
+3. **Blob Storage + Database** (Large scale, > 10K concurrent users)
+   - **Metadata**: Store session metadata in PostgreSQL/MySQL
+   - **Messages**: Store full conversation history in S3/Azure Blob/GCS
+   - **Benefits**: Cost-effective for long conversations, unlimited scalability
+   - **Pattern**: Keep recent messages in cache (Redis), archive to blob storage
+
+**Recommended Architecture for Production:**
+
+```
+PostgreSQL (metadata) + Redis (hot cache) + S3 (cold storage)
+  ├── Active sessions: Redis (60min TTL)
+  ├── Session metadata: PostgreSQL (user_id, created_at, last_accessed)
+  └── Full history: S3 (gzipped JSON, partitioned by date)
+```
+
+This hybrid approach balances performance, cost, and scalability for production chat applications.
 
 ## 📚 Future Enhancements
 
