@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Tuple
+from typing import Tuple, Optional, Any, Dict, List
 from detoxify import Detoxify
 from app.config import settings
 
@@ -19,7 +19,13 @@ class ModerationService:
     # LOWER = MORE STRICT (blocks more content)
     # HIGHER = MORE LENIENT (blocks less content)
     # 0.3 = stricter moderation, 0.5 = moderate, 0.7 = lenient
-    TOXICITY_THRESHOLD = 0.3
+    TOXICITY_THRESHOLD: float = 0.3
+
+    # Validation constraints
+    MIN_QUESTION_LENGTH: int = 5
+    MAX_QUESTION_LENGTH: int = 500
+    REPEATED_CHAR_LIMIT: int = 10  # 10 identical chars in a row
+    SPECIAL_CHAR_RATIO_LIMIT: float = 0.5  # >50% non-alnum ASCII characters
     
     # Map Detoxify categories to user-friendly reason names
     CATEGORY_NAMES = {
@@ -35,15 +41,15 @@ class ModerationService:
         """Initialize the moderation service with Detoxify and optionally OpenAI."""
         # Always initialize Detoxify
         try:
-            self.detoxify_model = Detoxify('original')
+            self.detoxify_model: Detoxify = Detoxify('original')
             logger.info("✅ Moderation: Detoxify model loaded successfully")
         except Exception as e:
             logger.error(f"❌ Moderation: Failed to initialize Detoxify: {e}")
             raise RuntimeError(f"Failed to initialize moderation service: {e}")
         
         # Optionally initialize OpenAI moderation if API key is available
-        self.openai_client = None
-        self.use_openai = False
+        self.openai_client: Optional[Any] = None
+        self.use_openai: bool = False
         
         if settings.openai_api_key:
             try:
@@ -71,10 +77,10 @@ class ModerationService:
         if not text:
             return False, "Question cannot be empty"
         
-        if len(text) < 5:
+        if len(text) < self.MIN_QUESTION_LENGTH:
             return False, "Question must be at least 5 characters long"
         
-        if len(text) > 500:
+        if len(text) > self.MAX_QUESTION_LENGTH:
             return False, "Question must not exceed 500 characters"
         
         # Check for spam patterns
@@ -82,61 +88,22 @@ class ModerationService:
             return False, "Question contains spam patterns"
         
         # Collect flags from all moderation services
-        all_flagged_reasons = []
-        
-        # 1. Run Detoxify toxicity detection (always active)
-        try:
-            detoxify_results = self.detoxify_model.predict(text)
-            
-            for category, score in detoxify_results.items():
-                if score > self.TOXICITY_THRESHOLD:
-                    reason_name = self.CATEGORY_NAMES.get(category, category)
-                    all_flagged_reasons.append(reason_name)
-            
-        except Exception as e:
-            logger.error(f"Error during Detoxify moderation check: {e}")
-            # Fail open for Detoxify - continue to other checks
-        
-        # 2. Run OpenAI moderation (if configured)
+        all_flagged_reasons: List[str] = []
+
+        # 1) Detoxify
+        all_flagged_reasons.extend(self._run_detoxify_check(text))
+
+        # 2) OpenAI (if configured)
         if self.use_openai and self.openai_client:
             try:
-                response = self.openai_client.moderations.create(input=text)
-                
-                if response.results[0].flagged:
-                    categories = response.results[0].categories
-                    openai_reasons = []
-                    
-                    if categories.harassment:
-                        openai_reasons.append("harassment")
-                    if categories.harassment_threatening:
-                        openai_reasons.append("threatening harassment")
-                    if categories.hate:
-                        openai_reasons.append("hate")
-                    if categories.hate_threatening:
-                        openai_reasons.append("threatening hate")
-                    if categories.self_harm:
-                        openai_reasons.append("self-harm")
-                    if categories.self_harm_intent:
-                        openai_reasons.append("self-harm intent")
-                    if categories.sexual:
-                        openai_reasons.append("sexual content")
-                    if categories.sexual_minors:
-                        openai_reasons.append("sexual content involving minors")
-                    if categories.violence:
-                        openai_reasons.append("violence")
-                    if categories.violence_graphic:
-                        openai_reasons.append("graphic violence")
-                    
-                    all_flagged_reasons.extend(openai_reasons)
-                    
+                all_flagged_reasons.extend(self._run_openai_check(text))
             except Exception as e:
                 logger.warning(f"OpenAI moderation API error: {e}")
-                # Continue - Detoxify results still apply
-        
+
         # Block if any service flagged the content
         if all_flagged_reasons:
             # Remove duplicates while preserving order
-            unique_reasons = []
+            unique_reasons: List[str] = []
             for reason in all_flagged_reasons:
                 if reason not in unique_reasons:
                     unique_reasons.append(reason)
@@ -160,7 +127,8 @@ class ModerationService:
             return False
         
         # Check for 10+ repeated identical characters
-        if re.search(r'(.)\1{9,}', text):
+        repeated_char_pattern = rf'(.)\1{{{self.REPEATED_CHAR_LIMIT - 1},}}'
+        if re.search(repeated_char_pattern, text):
             return True
         
         # Check for excessive special characters (more than 50% non-alphanumeric)
@@ -170,10 +138,60 @@ class ModerationService:
                 if not c.isalnum() and not c.isspace() and c.isascii()
             )
             special_char_ratio = special_char_count / len(text)
-            if special_char_ratio > 0.5:
+            if special_char_ratio > self.SPECIAL_CHAR_RATIO_LIMIT:
                 return True
         
         return False
+
+    def _run_detoxify_check(self, text: str) -> List[str]:
+        """Run Detoxify check and return list of reason labels that exceed threshold."""
+        reasons: List[str] = []
+        try:
+            results: Dict[str, float] = self.detoxify_model.predict(text)
+            for category, score in results.items():
+                if score > self.TOXICITY_THRESHOLD:
+                    reasons.append(self.CATEGORY_NAMES.get(category, category))
+        except Exception as e:
+            logger.error(f"Error during Detoxify moderation check: {e}")
+        return reasons
+
+    def _run_openai_check(self, text: str) -> List[str]:
+        """Run OpenAI moderation and return list of reason labels when flagged.
+        Requires client to be initialized.
+        """
+        if not self.openai_client:
+            return []
+
+        response = self.openai_client.moderations.create(input=text)
+        if not response.results or not response.results[0].flagged:
+            return []
+
+        categories = response.results[0].categories
+        reasons: List[str] = []
+
+        # Map OpenAI categories to human-friendly reasons
+        if categories.harassment:
+            reasons.append("harassment")
+        if getattr(categories, 'harassment_threatening', False):
+            reasons.append("threatening harassment")
+        if categories.hate:
+            reasons.append("hate")
+        if getattr(categories, 'hate_threatening', False):
+            reasons.append("threatening hate")
+        if categories.self_harm:
+            reasons.append("self-harm")
+        if getattr(categories, 'self_harm_intent', False):
+            reasons.append("self-harm intent")
+        if categories.sexual:
+            reasons.append("sexual content")
+        if getattr(categories, 'sexual_minors', False):
+            reasons.append("sexual content involving minors")
+        if categories.violence:
+            reasons.append("violence")
+        if getattr(categories, 'violence_graphic', False):
+            reasons.append("graphic violence")
+
+        return reasons
 
 
 # Singleton instance
