@@ -35,8 +35,36 @@ const ChatMessage = ({ message }) => {
     );
   };
 
+  // Check if response indicates no information available
+  const isNoInfoResponse = () => {
+    if (!content) return false;
+
+    const contentLower = content.toLowerCase().trim();
+    const noInfoPatterns = [
+      "i don't have information",
+      "i don't have information about that",
+      "couldn't find relevant articles",
+      "no information available",
+      "i don't have any information",
+    ];
+
+    const hasNoInfoPattern = noInfoPatterns.some((pattern) =>
+      contentLower.includes(pattern)
+    );
+
+    // Also check if no citations are present
+    const citedNumbers = getCitedArticleNumbers(content);
+    const hasNoCitations = citedNumbers.size === 0;
+
+    // Hide sources if it's a no-information response AND no citations
+    return hasNoInfoPattern && hasNoCitations;
+  };
+
   // Filter sources to only show those that are actually cited
   const getUsedSources = () => {
+    // Don't show sources if response indicates no information
+    if (isNoInfoResponse()) return [];
+
     if (!sources || sources.length === 0 || !content) return [];
 
     const citedNumbers = getCitedArticleNumbers(content);

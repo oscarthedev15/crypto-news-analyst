@@ -1,5 +1,6 @@
 import logging
 import json
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -97,6 +98,33 @@ async def generate_sse_response(
                 yield event
         
         logger.info(f"Streamed {chunk_count} chunks")
+        
+        # Check if response indicates no information available
+        # If so, send flag to hide sources
+        no_info_patterns = [
+            "i don't have information",
+            "i don't have information about that",
+            "couldn't find relevant articles",
+            "no information available",
+            "i don't have any information"
+        ]
+        
+        response_lower = full_response.lower().strip()
+        has_no_info = any(
+            pattern in response_lower 
+            for pattern in no_info_patterns
+        )
+        
+        # If no information response and no citations found, hide sources
+        if has_no_info:
+            # Check if there are any article citations
+            has_citations = bool(re.search(r'\[Article\s+\d+\]', full_response, re.IGNORECASE))
+            
+            if not has_citations:
+                # Send flag to hide sources
+                hide_sources_event = f"data: {json.dumps({'hideSources': True})}\n\n"
+                logger.info("Detected no-information response, hiding sources")
+                yield hide_sources_event
         
         # Save conversation to session history
         if session_id and full_response:

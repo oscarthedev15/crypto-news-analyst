@@ -13,13 +13,13 @@ An AI-powered semantic search engine for cryptocurrency news with streaming LLM 
   - **Ollama** (default, free, local) - Uses Llama 3.1 8B, Qwen 2.5, or any Ollama model
   - **OpenAI** (optional, paid) - GPT-4o-mini with cloud-based inference
   - **Auto-detection**: Tries Ollama first, falls back to OpenAI if configured
-- **Content Moderation**: Powered by OpenAI's Moderation API for safe queries
+- **Content Moderation**: Powered by Detoxify for detecting toxic, inappropriate, or violent content
 - **Automated Refresh**: Cron job integration with dynamic index reloading (configurable: every minute by default)
 - **Modern UI**: React + Vite frontend with dark theme
 
 ## 🛠️ Tech Stack
 
-**Backend:** FastAPI, SQLAlchemy, FAISS, BM25 (rank-bm25), sentence-transformers, httpx, BeautifulSoup, OpenAI API (LLM & moderation), SQLite
+**Backend:** FastAPI, SQLAlchemy, FAISS, BM25 (rank-bm25), sentence-transformers, httpx, BeautifulSoup, OpenAI API (LLM, optional), Detoxify (moderation), SQLite
 
 **Frontend:** React 18, Vite, Modern CSS
 
@@ -252,7 +252,7 @@ The server automatically detects when the cron job updates the indexes:
 
 ### Hybrid Search Pipeline
 
-1. **User Question** → OpenAI Moderation API check
+1. **User Question** → Detoxify moderation check (detects toxic/inappropriate content)
 2. **Semantic Search**: Generate 384-dim embedding → FAISS vector similarity search
 3. **Keyword Search**: Tokenize query → BM25 scoring for exact term matching
 4. **Hybrid Ranking**: Combine scores (default: 70% semantic + 30% keyword)

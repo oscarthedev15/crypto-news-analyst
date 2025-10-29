@@ -131,6 +131,9 @@ class CryptoNewsAPI {
           } else if (data.error) {
             onError(data.error);
             break;
+          } else if (data.hideSources !== undefined) {
+            // Backend flag to hide sources (no information response)
+            onSources([]); // Clear sources
           }
         }
       }

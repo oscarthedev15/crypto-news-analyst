@@ -192,7 +192,7 @@ RESPONSE STRUCTURE:
 2. Provide supporting details from the articles with proper citations
 3. If multiple articles mention the same topic, cite all relevant ones
 4. Be concise - focus on the most relevant information
-5. At the end, add a "Sources:" section with the URLs of articles you cited
+5. DO NOT include a "Sources:" section - sources are displayed separately by the interface
 
 WHAT TO AVOID:
 - DO NOT answer questions about topics not covered in the provided articles
