@@ -105,11 +105,14 @@ async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
         total = db.query(Article).count()
         logger.info(f"Total articles in database: {total}")
         
-        # Rebuild FAISS index
-        logger.info("Rebuilding FAISS index...")
+        # Rebuild FAISS index only if new articles were ingested
         search_service = get_search_service()
-        search_service.build_index(db)
-        logger.info("FAISS index rebuilt successfully")
+        if new_count > 0:
+            logger.info("Rebuilding FAISS index (new articles detected)...")
+            search_service.build_index(db)
+            logger.info("FAISS index rebuilt successfully")
+        else:
+            logger.info("No new articles; skipping index rebuild")
         
         # Print index statistics
         stats = search_service.get_index_stats(db)

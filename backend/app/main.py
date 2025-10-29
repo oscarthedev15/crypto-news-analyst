@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
 from app.services.search import get_search_service
+from app.services.llm import get_llm_service
 from app.routes import ask
 
 # Configure logging
@@ -49,6 +50,22 @@ async def startup_event():
         logger.info("Application started without search index. Data ingestion required.")
     else:
         logger.info("Search index loaded successfully")
+
+    # Initialize LLM service and log provider/model info
+    try:
+        llm_service = get_llm_service()
+        provider_info = llm_service.get_provider_info()
+        provider = provider_info.get("provider", "unknown")
+        model = provider_info.get("model", "unknown")
+        if provider == "ollama":
+            base_url = provider_info.get("base_url", "")
+            logger.info(f"LLM provider: Ollama | model: {model} | base_url: {base_url}")
+        elif provider == "openai":
+            logger.info(f"LLM provider: OpenAI | model: {model}")
+        else:
+            logger.info("LLM provider: unknown")
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM service on startup: {e}")
 
 
 @app.get("/")
