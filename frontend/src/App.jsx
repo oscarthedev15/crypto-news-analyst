@@ -132,39 +132,6 @@ function App() {
               <p>Ask me anything about cryptocurrency news!</p>
 
               <IndexStats />
-
-              <div className="example-questions">
-                <div className="example-label">Try asking:</div>
-                <button
-                  className="example-btn"
-                  onClick={() =>
-                    handleSubmitQuestion(
-                      "What's the latest news about Bitcoin?"
-                    )
-                  }
-                  disabled={isLoading}
-                >
-                  What's the latest news about Bitcoin?
-                </button>
-                <button
-                  className="example-btn"
-                  onClick={() =>
-                    handleSubmitQuestion("Explain Ethereum Layer 2 solutions")
-                  }
-                  disabled={isLoading}
-                >
-                  Explain Ethereum Layer 2 solutions
-                </button>
-                <button
-                  className="example-btn"
-                  onClick={() =>
-                    handleSubmitQuestion("What happened with FTX?")
-                  }
-                  disabled={isLoading}
-                >
-                  What happened with FTX?
-                </button>
-              </div>
             </div>
           )}
 
