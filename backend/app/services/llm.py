@@ -1,7 +1,7 @@
 import logging
 from typing import List, AsyncGenerator, Optional
 from openai import AsyncOpenAI
-from langchain.chat_models import init_chat_model
+from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
 from app.models import Article
 from app.config import settings
@@ -13,9 +13,9 @@ class LLMService:
     
     def __init__(self):
         self.client = AsyncOpenAI(api_key=settings.openai_api_key)
-        # Use LangChain v1 init_chat_model for unified model initialization
-        self.langchain_llm = init_chat_model(
-            model="openai:gpt-4o-mini",
+        # Use LangChain v1.0 ChatOpenAI for streaming responses
+        self.langchain_llm = ChatOpenAI(
+            model="gpt-4o-mini",
             temperature=0.5,
             max_tokens=800,
             streaming=True,
