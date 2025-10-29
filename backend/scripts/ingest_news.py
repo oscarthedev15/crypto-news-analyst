@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.database import SessionLocal, init_db
 from app.models import Article
-from app.services.scraper import scrape_all_sources
+from app.services.scraper import scrape_all_sources, APPROVED_SOURCES
 from app.services.search import get_search_service
 
 # Configure logging
@@ -35,51 +35,53 @@ async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
     """Fetch and ingest articles from all sources
     
     Args:
-        max_articles: Max articles per source to fetch
+        max_articles: Max NEW articles per source to fetch
         force_rebuild: Force rebuild of FAISS index
     """
-    logger.info(f"Starting article ingestion (max {max_articles} per source)...")
+    logger.info(f"Starting article ingestion (max {max_articles} NEW per source)...")
     
     # Initialize database
     init_db()
     db = SessionLocal()
     
     try:
-        # Fetch articles from all sources
-        logger.info("Scraping articles from all sources...")
+        # Get all existing URLs from database to avoid re-scraping
+        logger.info("Fetching existing article URLs from database...")
+        existing_urls = set(url[0] for url in db.query(Article.url).all())
+        logger.info(f"Found {len(existing_urls)} existing articles in database")
+        
+        # Fetch NEW articles from all sources (passing existing URLs to skip)
+        logger.info("Scraping NEW articles from all sources...")
         start_time = datetime.utcnow()
-        articles_data = await scrape_all_sources(max_articles)
-        logger.info(f"Scraped {len(articles_data)} articles in {(datetime.utcnow() - start_time).total_seconds():.1f}s")
+        articles_data = await scrape_all_sources(max_articles, existing_urls)
+        logger.info(f"Scraped {len(articles_data)} NEW articles in {(datetime.utcnow() - start_time).total_seconds():.1f}s")
         
         # Process and store articles
         new_count = 0
-        updated_count = 0
         skipped_count = 0
         
         for article_data in articles_data:
             try:
-                # Check if URL already exists
-                existing = db.query(Article).filter(
-                    Article.url == article_data["url"]
-                ).first()
+                # Double-check URL doesn't exist (should already be filtered by scraper)
+                if article_data["url"] in existing_urls:
+                    logger.debug(f"Skipping duplicate URL: {article_data['url']}")
+                    skipped_count += 1
+                    continue
                 
-                if existing:
-                    # Update existing article
-                    existing.content = article_data["content"]
-                    existing.scraped_at = datetime.utcnow()
-                    updated_count += 1
-                else:
-                    # Create new article
-                    article = Article(
-                        title=article_data["title"],
-                        content=article_data["content"],
-                        url=article_data["url"],
-                        source=article_data["source"],
-                        published_date=article_data["published_date"],
-                        scraped_at=datetime.utcnow()
-                    )
-                    db.add(article)
-                    new_count += 1
+                # Create new article
+                article = Article(
+                    title=article_data["title"],
+                    content=article_data["content"],
+                    url=article_data["url"],
+                    source=article_data["source"],
+                    published_date=article_data["published_date"],
+                    scraped_at=datetime.utcnow()
+                )
+                db.add(article)
+                new_count += 1
+                
+                # Add to existing_urls set to prevent duplicates in this batch
+                existing_urls.add(article_data["url"])
             
             except Exception as e:
                 logger.warning(f"Error processing article: {e}")
@@ -88,13 +90,13 @@ async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
         
         # Commit changes
         db.commit()
-        logger.info(f"Ingestion complete: {new_count} new, {updated_count} updated, {skipped_count} skipped")
+        logger.info(f"Ingestion complete: {new_count} new, {skipped_count} skipped")
         
-        # Print statistics by source
+        # Print statistics by source (dynamically from scraper config)
         logger.info("Articles by source:")
-        for source in ["CoinTelegraph", "TheDefiant", "Decrypt"]:
-            count = db.query(Article).filter(Article.source == source).count()
-            logger.info(f"  {source}: {count}")
+        for source_name in APPROVED_SOURCES.values():
+            count = db.query(Article).filter(Article.source == source_name).count()
+            logger.info(f"  {source_name}: {count}")
         
         # Total articles
         total = db.query(Article).count()
@@ -115,7 +117,7 @@ async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
         logger.info("Database refresh completed successfully")
         print(f"\n✓ Refresh completed at {datetime.utcnow().isoformat()}")
         print(f"  New articles: {new_count}")
-        print(f"  Updated: {updated_count}")
+        print(f"  Skipped: {skipped_count}")
         print(f"  Total in DB: {total}")
     
     except Exception as e:
