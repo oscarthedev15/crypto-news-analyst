@@ -29,6 +29,7 @@ class SearchService:
         self.bm25 = None
         self.tokenized_corpus = None
         self.embedding_service = get_embedding_service()
+        self._index_load_time = None  # Track when index was last loaded
     
     def _tokenize(self, text: str) -> List[str]:
         """Enhanced tokenization for BM25 with domain/brand name handling
@@ -122,8 +123,45 @@ class SearchService:
         
         logger.info(f"Hybrid indexes built successfully. Indexed {len(articles)} articles.")
     
-    def load_index(self) -> bool:
+    def _get_index_modification_time(self) -> Optional[float]:
+        """Get the latest modification time of index files
+        
+        Returns:
+            Latest modification timestamp, or None if files don't exist
+        """
+        try:
+            required_files = [INDEX_FILE, ARTICLE_IDS_FILE, METADATA_FILE]
+            if not all(f.exists() for f in required_files):
+                return None
+            
+            # Get the most recent modification time
+            mod_times = [f.stat().st_mtime for f in required_files]
+            return max(mod_times)
+        except Exception as e:
+            logger.error(f"Error checking index modification time: {e}")
+            return None
+    
+    def _should_reload_index(self) -> bool:
+        """Check if index files have been modified since last load
+        
+        Returns:
+            True if index should be reloaded, False otherwise
+        """
+        if self.index is None or self._index_load_time is None:
+            return True
+        
+        current_mod_time = self._get_index_modification_time()
+        if current_mod_time is None:
+            return False
+        
+        # Reload if index files have been modified
+        return current_mod_time > self._index_load_time
+    
+    def load_index(self, force: bool = False) -> bool:
         """Load FAISS and BM25 indexes from disk
+        
+        Args:
+            force: Force reload even if already loaded
         
         Returns:
             True if successful, False otherwise
@@ -154,6 +192,9 @@ class SearchService:
                 logger.warning("BM25 index not found - using semantic search only. Run index rebuild to enable hybrid search.")
                 logger.info(f"Loaded FAISS index with {len(self.article_ids)} articles")
             
+            # Track when we loaded the index
+            self._index_load_time = self._get_index_modification_time()
+            
             return True
         except Exception as e:
             logger.error(f"Error loading indexes: {e}")
@@ -179,6 +220,14 @@ class SearchService:
         Returns:
             List of (Article, hybrid_score) tuples
         """
+        # Check if index needs to be reloaded (new articles indexed)
+        if self._should_reload_index():
+            logger.info("Detected index update, reloading indexes...")
+            if self.load_index():
+                logger.info("Indexes reloaded successfully")
+            else:
+                logger.warning("Failed to reload indexes")
+        
         if self.index is None:
             logger.warning("Search index not loaded")
             return []
@@ -269,6 +318,12 @@ class SearchService:
             Dictionary with index statistics
         """
         try:
+            # Check if index needs to be reloaded (new articles indexed)
+            if self._should_reload_index():
+                logger.info("Detected index update, reloading indexes for stats...")
+                if self.load_index():
+                    logger.info("Indexes reloaded successfully")
+            
             if self.index is None:
                 return {
                     "total_articles": 0,

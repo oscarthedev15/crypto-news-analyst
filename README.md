@@ -11,7 +11,7 @@ An AI-powered semantic search engine for cryptocurrency news with streaming LLM 
 - **Streaming LLM Responses**: Real-time GPT-4 responses with source citations
 - **Content Moderation**: Powered by OpenAI's Moderation API for safe queries
 - **Web Search Comparison**: Compare database results with OpenAI's web search
-- **Automated Refresh**: Cron job integration (default: every 6 hours)
+- **Automated Refresh**: Cron job integration with dynamic index reloading (configurable: every minute by default)
 - **Modern UI**: React + Vite frontend with dark theme
 
 ## 🛠️ Tech Stack
@@ -107,18 +107,83 @@ Access at `http://localhost:5173`
 
 ## ⏰ Automated Data Refresh
 
-Make executable and add to crontab:
+### One-Command Setup
+
+Set up automated article ingestion with a single command:
 
 ```bash
-chmod +x cron_refresh.sh
-crontab -e
+# Default: every minute
+./cron_refresh.sh --setup
 
-# Add: 0 */6 * * * /path/to/crypto-news-agent/cron_refresh.sh
+# Every 5 minutes
+./cron_refresh.sh --setup 5
+
+# Every 10 minutes
+./cron_refresh.sh --setup 10
+
+# Every 30 minutes
+./cron_refresh.sh --setup 30
+
+# Every hour
+./cron_refresh.sh --setup hourly
+
+# Daily at midnight
+./cron_refresh.sh --setup daily
 ```
 
-Manual refresh: `python backend/scripts/ingest_news.py --max-articles-per-source 25`
+This will:
 
-Monitor logs: `tail -f backend/logs/cron.log`
+- ✅ Install a cron job with your chosen schedule
+- ✅ Automatically fetch new crypto articles from all sources
+- ✅ Rebuild the vector database (FAISS + BM25 indexes)
+- ✅ Server picks up changes **dynamically without restart**
+
+### Change Schedule
+
+Simply re-run setup with a different interval:
+
+```bash
+./cron_refresh.sh --setup 10  # Change to every 10 minutes
+```
+
+### Monitor Activity
+
+Watch logs in real-time:
+
+```bash
+tail -f backend/logs/cron.log
+```
+
+### Manual Operations
+
+Run ingestion manually:
+
+```bash
+./cron_refresh.sh
+# or
+python backend/scripts/ingest_news.py --max-articles-per-source 25
+```
+
+View installed cron jobs:
+
+```bash
+crontab -l
+```
+
+Remove cron job:
+
+```bash
+crontab -r
+```
+
+### How Dynamic Reloading Works
+
+The server automatically detects when the cron job updates the indexes:
+
+1. Cron job runs on your configured schedule and rebuilds indexes
+2. Server checks index file modification times before each search
+3. If indexes are newer, they're automatically reloaded
+4. **No server restart required** - new articles appear immediately!
 
 ## 🔍 How It Works
 
