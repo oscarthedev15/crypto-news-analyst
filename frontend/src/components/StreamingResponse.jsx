@@ -3,7 +3,7 @@ import SourceCard from "./SourceCard";
 import LoadingIndicator from "./LoadingIndicator";
 import "./StreamingResponse.css";
 
-function StreamingResponse({ text, isStreaming, sources, mode }) {
+function StreamingResponse({ text, isStreaming, sources }) {
   const responseRef = useRef(null);
 
   // Auto-scroll to bottom as new content arrives
@@ -15,14 +15,7 @@ function StreamingResponse({ text, isStreaming, sources, mode }) {
 
   return (
     <div className="streaming-response">
-      {/* Mode indicator */}
-      <div className="mode-indicator">
-        <span className={`mode-badge ${mode}`}>
-          {mode === "database" ? "🗄️ Database Search" : "🌐 Web Search"}
-        </span>
-      </div>
-
-      {/* Response text - now shown FIRST */}
+      {/* Response text */}
       <div className="response-section">
         <h3 className="response-title">💬 Response</h3>
         <div ref={responseRef} className="response-text">
@@ -33,8 +26,8 @@ function StreamingResponse({ text, isStreaming, sources, mode }) {
       {/* Loading indicator during streaming */}
       {isStreaming && text && <LoadingIndicator />}
 
-      {/* Sources (only for database mode) - now shown BELOW response */}
-      {mode === "database" && sources.length > 0 && (
+      {/* Sources - shown below response */}
+      {sources && sources.length > 0 && (
         <div className="sources-section-compact">
           <h3 className="sources-title-compact">📚 Sources</h3>
           <div className="sources-list-compact">

@@ -21,7 +21,7 @@ function App() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSubmitQuestion = async (newQuestion, mode) => {
+  const handleSubmitQuestion = async (newQuestion) => {
     // Add user message
     const userMessage = {
       id: Date.now(),
@@ -48,93 +48,53 @@ function App() {
     setMessages((prev) => [...prev, assistantMessage]);
 
     try {
-      if (mode === "database") {
-        await api.askQuestion(
-          newQuestion,
-          (sources) => {
-            // Update assistant message with sources
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId ? { ...msg, sources } : msg
-              )
-            );
-          },
-          (chunk) => {
-            // Append content chunks
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: msg.content + chunk }
-                  : msg
-              )
-            );
-          },
-          () => {
-            // Mark as complete
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, isStreaming: false }
-                  : msg
-              )
-            );
-            setIsLoading(false);
-          },
-          (errorMsg) => {
-            setError(errorMsg);
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? {
-                      ...msg,
-                      content: `Error: ${errorMsg}`,
-                      isStreaming: false,
-                    }
-                  : msg
-              )
-            );
-            setIsLoading(false);
-          }
-        );
-      } else if (mode === "websearch") {
-        await api.askWebSearch(
-          newQuestion,
-          (chunk) => {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, content: msg.content + chunk }
-                  : msg
-              )
-            );
-          },
-          () => {
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? { ...msg, isStreaming: false }
-                  : msg
-              )
-            );
-            setIsLoading(false);
-          },
-          (errorMsg) => {
-            setError(errorMsg);
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessageId
-                  ? {
-                      ...msg,
-                      content: `Error: ${errorMsg}`,
-                      isStreaming: false,
-                    }
-                  : msg
-              )
-            );
-            setIsLoading(false);
-          }
-        );
-      }
+      await api.askQuestion(
+        newQuestion,
+        (sources) => {
+          // Update assistant message with sources
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId ? { ...msg, sources } : msg
+            )
+          );
+        },
+        (chunk) => {
+          // Append content chunks
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, content: msg.content + chunk }
+                : msg
+            )
+          );
+        },
+        () => {
+          // Mark as complete
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, isStreaming: false }
+                : msg
+            )
+          );
+          setIsLoading(false);
+        },
+        (errorMsg) => {
+          setError(errorMsg);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? {
+                    ...msg,
+                    content: `Error: ${errorMsg}`,
+                    isStreaming: false,
+                  }
+                : msg
+            )
+          );
+          setIsLoading(false);
+        }
+      );
     } catch (err) {
       setError(err.message);
       setIsLoading(false);
@@ -179,8 +139,7 @@ function App() {
                   className="example-btn"
                   onClick={() =>
                     handleSubmitQuestion(
-                      "What's the latest news about Bitcoin?",
-                      "database"
+                      "What's the latest news about Bitcoin?"
                     )
                   }
                   disabled={isLoading}
@@ -190,10 +149,7 @@ function App() {
                 <button
                   className="example-btn"
                   onClick={() =>
-                    handleSubmitQuestion(
-                      "Explain Ethereum Layer 2 solutions",
-                      "database"
-                    )
+                    handleSubmitQuestion("Explain Ethereum Layer 2 solutions")
                   }
                   disabled={isLoading}
                 >
@@ -202,7 +158,7 @@ function App() {
                 <button
                   className="example-btn"
                   onClick={() =>
-                    handleSubmitQuestion("What happened with FTX?", "database")
+                    handleSubmitQuestion("What happened with FTX?")
                   }
                   disabled={isLoading}
                 >
@@ -232,7 +188,6 @@ function App() {
           <QuestionInput
             onSubmit={handleSubmitQuestion}
             disabled={isLoading}
-            defaultMode="database"
             onClearChat={handleClearChat}
           />
           <div className="footer-info">

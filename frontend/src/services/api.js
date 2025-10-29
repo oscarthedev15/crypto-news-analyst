@@ -142,63 +142,6 @@ class CryptoNewsAPI {
   }
 
   /**
-   * Ask a question to the web search endpoint
-   * @param {string} question - The question to ask
-   * @param {function} onChunk - Callback for each text chunk
-   * @param {function} onComplete - Callback when streaming completes
-   * @param {function} onError - Callback on error
-   */
-  async askWebSearch(question, onChunk, onComplete, onError) {
-    try {
-      const response = await fetch(`${this.baseURL}/ask-websearch`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ question }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        onError(error.detail || "Failed to process web search");
-        return;
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-
-        buffer = events.pop() || "";
-
-        for (const event of events) {
-          if (!event.trim()) continue;
-
-          const data = this.parseSSEEvent(event);
-          if (!data) continue;
-
-          if (data.content) {
-            onChunk(data.content);
-          } else if (data.error) {
-            onError(data.error);
-            break;
-          }
-        }
-      }
-
-      onComplete();
-    } catch (error) {
-      onError(error.message || "Network error");
-    }
-  }
-
-  /**
    * Get index statistics
    * @returns {Promise<object>} Index statistics
    */

@@ -155,10 +155,12 @@ async def ask_question(
 
 @router.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint with LLM provider info"""
+    provider_info = llm_service.get_provider_info()
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat() + "Z"
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "llm_provider": provider_info
     }
 
 

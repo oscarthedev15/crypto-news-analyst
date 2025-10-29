@@ -5,7 +5,7 @@ from datetime import datetime
 from app.config import settings
 from app.database import init_db
 from app.services.search import get_search_service
-from app.routes import ask, websearch
+from app.routes import ask
 
 # Configure logging
 logging.basicConfig(
@@ -32,7 +32,6 @@ app.add_middleware(
 
 # Include routers
 app.include_router(ask.router)
-app.include_router(websearch.router)
 
 
 @app.on_event("startup")
@@ -64,7 +63,6 @@ async def root():
         "message": "Welcome to the Crypto News Agent API",
         "endpoints": {
             "ask": "POST /api/ask - Semantic search over local news articles",
-            "ask_websearch": "POST /api/ask-websearch - Web search via OpenAI",
             "health": "GET /api/health - Health check",
             "index_stats": "GET /api/index-stats - Database statistics",
             "sources": "GET /api/sources - News sources information"

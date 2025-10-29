@@ -1,6 +1,6 @@
 # 🚀 Crypto News Agent
 
-An AI-powered semantic search engine for cryptocurrency news with streaming LLM responses, source citations, and OpenAI moderation.
+An AI-powered semantic search engine for cryptocurrency news with streaming LLM responses, source citations, and content moderation.
 
 ## ✨ Features
 
@@ -8,15 +8,18 @@ An AI-powered semantic search engine for cryptocurrency news with streaming LLM 
 - **Hybrid Search**: Combines semantic (FAISS embeddings) + keyword matching (BM25) for optimal results
 - **Semantic Search**: FAISS vector database with sentence-transformers for intelligent similarity search
 - **Keyword Boosting**: Adjustable keyword matching weight (30% default) for brand names and specific terms
-- **Streaming LLM Responses**: Real-time GPT-4 responses with source citations
+- **Streaming LLM Responses**: Real-time AI responses with source citations
+- **Multiple LLM Providers**:
+  - **Ollama** (default, free, local) - Uses Llama 3.1 8B, Qwen 2.5, or any Ollama model
+  - **OpenAI** (optional, paid) - GPT-4o-mini with cloud-based inference
+  - **Auto-detection**: Tries Ollama first, falls back to OpenAI if configured
 - **Content Moderation**: Powered by OpenAI's Moderation API for safe queries
-- **Web Search Comparison**: Compare database results with OpenAI's web search
 - **Automated Refresh**: Cron job integration with dynamic index reloading (configurable: every minute by default)
 - **Modern UI**: React + Vite frontend with dark theme
 
 ## 🛠️ Tech Stack
 
-**Backend:** FastAPI, SQLAlchemy, FAISS, BM25 (rank-bm25), sentence-transformers, httpx, BeautifulSoup, OpenAI API (LLM, web search & moderation), SQLite
+**Backend:** FastAPI, SQLAlchemy, FAISS, BM25 (rank-bm25), sentence-transformers, httpx, BeautifulSoup, OpenAI API (LLM & moderation), SQLite
 
 **Frontend:** React 18, Vite, Modern CSS
 
@@ -26,12 +29,60 @@ An AI-powered semantic search engine for cryptocurrency news with streaming LLM 
 
 - Python 3.9+
 - Node.js 18+
-- OpenAI API key
-- ~2GB disk space
+- **LLM Provider (choose one or both):**
+  - **[Ollama](https://ollama.com)** (recommended, free, local) - OR -
+  - **OpenAI API key** (optional, paid, cloud-based)
+- ~2GB disk space (+ 4-7GB per Ollama model if using local LLM)
 
 ## 🚀 Quick Start
 
-### 1. Backend Setup
+### 1. Choose Your LLM Provider
+
+#### Option A: Ollama (Recommended - FREE! 🎉)
+
+**Install Ollama:**
+
+```bash
+# macOS / Linux
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Or download from: https://ollama.com/download
+```
+
+**Pull a model:**
+
+```bash
+# Recommended: Best balance of speed and quality (~4.7GB)
+ollama pull llama3.1:8b
+
+# Fastest/Lightest option (~2GB, but may give less relevant answers)
+ollama pull llama3.2:3b
+
+# Best quality option (~9GB, excellent at following instructions)
+ollama pull qwen2.5:14b
+
+# Or use Mistral
+ollama pull mistral:7b
+```
+
+**Start Ollama (usually runs automatically):**
+
+```bash
+ollama serve
+```
+
+That's it! The system will auto-detect Ollama and use it by default.
+
+#### Option B: OpenAI (Optional)
+
+If you prefer OpenAI or want it as a fallback:
+
+1. Get an API key from [platform.openai.com](https://platform.openai.com)
+2. Add to `.env` file: `OPENAI_API_KEY=sk-...`
+
+**Smart Fallback:** The system automatically tries Ollama first, then falls back to OpenAI if configured.
+
+### 2. Backend Setup
 
 ```bash
 cd backend
@@ -43,12 +94,12 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Setup environment
+# Setup environment (optional - only needed for OpenAI)
 cp .env.example .env
-# Edit .env and add: OPENAI_API_KEY=sk_...
+# Edit .env and add: OPENAI_API_KEY=sk-... (if using OpenAI)
 ```
 
-### 2. Initial Data Ingestion
+### 3. Initial Data Ingestion
 
 ```bash
 # Fetch and index articles (takes 5-10 minutes on first run)
@@ -62,15 +113,29 @@ python scripts/ingest_news.py --max-articles-per-source 30
 curl -X POST http://localhost:8000/api/rebuild-index
 ```
 
-### 3. Start Backend
+### 4. Start Backend
 
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-You should see: `✓ Database initialized ✓ FAISS index loaded successfully ✓ API running at http://localhost:8000/docs`
+You should see:
 
-### 4. Frontend Setup (New Terminal)
+```
+✓ Database initialized
+✓ FAISS index loaded successfully
+✅ Initialized Ollama with model: llama3.1:8b  # or OpenAI if configured
+✓ API running at http://localhost:8000/docs
+```
+
+**Verify your LLM provider:**
+
+```bash
+curl http://localhost:8000/api/health
+# Should show: {"status":"healthy","llm_provider":{"provider":"ollama"...}}
+```
+
+### 5. Frontend Setup (New Terminal)
 
 ```bash
 cd frontend
@@ -84,9 +149,8 @@ Access at `http://localhost:5173`
 
 ### Web UI
 
-1. **Select Mode**: 🗄️ Database Search (fast, ~500ms) or 🌐 Web Search (live, 2-5s)
-2. **Ask Questions**: "What's the latest Bitcoin news?", "Explain Ethereum Layer 2", etc.
-3. **View Results**: Source cards with metadata, streaming LLM response with citations
+1. **Ask Questions**: "What's the latest Bitcoin news?", "Explain Ethereum Layer 2", etc.
+2. **View Results**: Source cards with metadata, streaming LLM response with citations
 
 ### API Endpoints
 
@@ -97,7 +161,6 @@ Access at `http://localhost:5173`
     - `recent_only` (optional, default: true): Filter to last 30 days
     - `top_k` (optional, default: 5): Number of results
     - `keyword_boost` (optional, default: 0.3): Keyword weight (0.0-1.0)
-- `POST /api/ask-websearch` - Web search (OpenAI)
 - `DELETE /api/session/{session_id}` - Clear chat session
 - `GET /api/sessions/stats` - Active session statistics (debug)
 - `GET /api/index-stats` - Database statistics
@@ -212,42 +275,76 @@ Pure semantic search struggles with:
 
 You can adjust the `keyword_boost` parameter (0.0-1.0) via API for different use cases.
 
-### Web Search Pipeline
-
-1. User Question → Moderation check
-2. OpenAI GPT-4 with web search
-3. Streaming response
-4. URL citation extraction
-
 ## 🔐 Environment Variables
 
-**Required:** `OPENAI_API_KEY` - Your OpenAI API key
+Create a `.env` file in the `backend/` directory:
 
-**Optional:**
+```bash
+# LLM Provider Settings
+LLM_PROVIDER=auto  # Options: "auto" (default), "ollama", "openai"
 
-- `DATABASE_URL` - Default: `sqlite:///./news_articles.db`
-- `EMBEDDING_MODEL` - Default: `all-MiniLM-L6-v2`
-- `TOP_K_ARTICLES` - Default: 5
-- `SIMILARITY_THRESHOLD` - Default: 0.3
+# Ollama Settings (if using local LLM)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1:8b  # Recommended: llama3.1:8b, qwen2.5:14b, llama3.2:3b (fast)
+OLLAMA_TEMPERATURE=0.1  # Lower = more focused responses (better for staying on topic)
+OLLAMA_MAX_TOKENS=1000
+
+# OpenAI Settings (optional, only needed if using OpenAI)
+OPENAI_API_KEY=sk-...  # Your OpenAI API key
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_TEMPERATURE=0.5
+OPENAI_MAX_TOKENS=800
+
+# Database & Search
+DATABASE_URL=sqlite:///./news_articles.db
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+TOP_K_ARTICLES=5
+SIMILARITY_THRESHOLD=0.3
+```
+
+**LLM_PROVIDER Options:**
+
+- `auto` (default): Smart detection with automatic fallback
+  - First checks if Ollama is running (health check to http://localhost:11434)
+  - If Ollama is running → uses Ollama ✅
+  - If Ollama is NOT running → checks for OpenAI API key
+  - If OpenAI key exists → uses OpenAI ✅
+  - If neither available → shows error with setup instructions
+- `ollama`: Force local Ollama only (will error if not running)
+- `openai`: Force OpenAI only (will error if API key not set)
 
 ## ⚡ Performance
 
 - Database search: ~500ms
-- Web search: 2-5 seconds
 - Scraping: ~2-3 sec per article
 - Initial index: 10-30 seconds
 
 ## 🐛 Troubleshooting
 
-**FAISS index not found:** Run `python backend/scripts/ingest_news.py`
+**LLM Provider Issues:**
 
-**OpenAI API error:** Check API key in `.env` file
+- **"No LLM provider available"**: Install Ollama or set `OPENAI_API_KEY` in `.env`
+- **"Ollama not running"**: Start Ollama with `ollama serve` or check if it's already running at `http://localhost:11434`
+- **"OpenAI API error"**: Check API key in `.env` file or switch to Ollama
+- **Check current provider**: `curl http://localhost:8000/api/health` to see which LLM is being used
 
-**No articles found:** Run ingestion with more articles: `--max-articles-per-source 50`
+**Ollama Specific:**
 
-**Frontend can't connect:** Ensure backend is running: `curl http://localhost:8000/health`
+- **Model not found**: Pull the model first: `ollama pull llama3.1:8b`
+- **Check available models**: Run `ollama list` to see installed models
+- **Irrelevant answers / sources not showing**: The smaller `llama3.2:3b` model struggles with instruction following. Upgrade to:
+  - `llama3.1:8b` (recommended, ~4.7GB): Much better at citing sources and staying on topic
+  - `qwen2.5:14b` (~9GB): Excellent at instruction following and RAG tasks
+  - `qwen2.5:32b` (~20GB): Best quality but needs significant RAM
+- **Slow responses**: This is normal for larger models; `llama3.1:8b` is 2-3x slower than `3b` but gives much better results
+- **Memory issues**: Ollama needs 8GB+ RAM; close other applications or use a smaller model
 
-**Hybrid search not working:** Rebuild indexes: `POST http://localhost:8000/api/rebuild-index`
+**General Issues:**
+
+- **FAISS index not found:** Run `python backend/scripts/ingest_news.py`
+- **No articles found:** Run ingestion with more articles: `--max-articles-per-source 50`
+- **Frontend can't connect:** Ensure backend is running: `curl http://localhost:8000/api/health`
+- **Hybrid search not working:** Rebuild indexes: `POST http://localhost:8000/api/rebuild-index`
 
 ## 🚧 Obstacles Overcome
 

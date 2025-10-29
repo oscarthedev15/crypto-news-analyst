@@ -1,23 +1,23 @@
 import React, { useState, useRef, useEffect } from "react";
 import "./QuestionInput.css";
 
-function QuestionInput({ onSubmit, disabled, defaultMode = "database", onClearChat }) {
+function QuestionInput({ onSubmit, disabled, onClearChat }) {
   const [question, setQuestion] = useState("");
-  const [mode, setMode] = useState(defaultMode);
   const textareaRef = useRef(null);
 
   useEffect(() => {
     // Auto-resize textarea
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+      textareaRef.current.style.height =
+        textareaRef.current.scrollHeight + "px";
     }
   }, [question]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (question.trim() && !disabled) {
-      onSubmit(question.trim(), mode);
+      onSubmit(question.trim());
       setQuestion("");
     }
   };
@@ -32,27 +32,6 @@ function QuestionInput({ onSubmit, disabled, defaultMode = "database", onClearCh
   return (
     <div className="chat-input-container">
       <div className="chat-controls">
-        <div className="mode-selector-compact">
-          <button
-            type="button"
-            className={`mode-btn ${mode === "database" ? "active" : ""}`}
-            onClick={() => setMode("database")}
-            disabled={disabled}
-            title="Search indexed articles"
-          >
-            🗄️ Database
-          </button>
-          <button
-            type="button"
-            className={`mode-btn ${mode === "websearch" ? "active" : ""}`}
-            onClick={() => setMode("websearch")}
-            disabled={disabled}
-            title="Search live internet"
-          >
-            🌐 Web Search
-          </button>
-        </div>
-        
         <button
           type="button"
           className="clear-btn"

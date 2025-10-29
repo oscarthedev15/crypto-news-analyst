@@ -35,12 +35,6 @@ class ErrorResponse(BaseModel):
     detail: str
     error_code: Optional[str] = None
 
-class ComparisonResponse(BaseModel):
-    """Response for comparing search results"""
-    database_sources: List[ArticleWithScore]
-    web_search_urls: List[str]
-    comparison_note: str
-
 class IndexStats(BaseModel):
     """Statistics about the search index"""
     total_articles: int

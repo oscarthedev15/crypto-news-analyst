@@ -1,13 +1,15 @@
 import logging
 import re
-from typing import Tuple
-from openai import OpenAI
+from typing import Tuple, Optional
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 class ModerationService:
-    """Service for moderating user input using OpenAI's moderation API"""
+    """Service for moderating user input
+    
+    Uses OpenAI's moderation API if available, otherwise falls back to basic keyword filtering.
+    """
     
     # Basic blocklist - add more as needed
     OFFENSIVE_KEYWORDS = {
@@ -16,7 +18,21 @@ class ModerationService:
     }
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.openai_api_key)
+        self.client = None
+        self.use_openai = False
+        
+        # Try to initialize OpenAI client if API key is available
+        if settings.openai_api_key:
+            try:
+                from openai import OpenAI
+                self.client = OpenAI(api_key=settings.openai_api_key)
+                self.use_openai = True
+                logger.info("✅ Moderation: Using OpenAI Moderation API")
+            except Exception as e:
+                logger.warning(f"⚠️ Moderation: Could not initialize OpenAI client: {e}")
+                logger.info("✅ Moderation: Using basic keyword filtering")
+        else:
+            logger.info("✅ Moderation: Using basic keyword filtering (OpenAI API key not configured)")
     
     def is_safe(self, text: str) -> Tuple[bool, str]:
         """Check if text is safe for processing
@@ -41,47 +57,51 @@ class ModerationService:
         if self._has_spam_pattern(text):
             return False, "Question contains spam patterns"
         
-        # Use OpenAI's moderation API for comprehensive content filtering
-        try:
-            response = self.client.moderations.create(input=text)
+        # Use OpenAI's moderation API if available
+        if self.use_openai and self.client:
+            try:
+                response = self.client.moderations.create(input=text)
+                
+                # Check if any categories are flagged
+                if response.results[0].flagged:
+                    categories = response.results[0].categories
+                    reasons = []
+                    
+                    if categories.harassment:
+                        reasons.append("harassment")
+                    if categories.harassment_threatening:
+                        reasons.append("threatening harassment")
+                    if categories.hate:
+                        reasons.append("hate")
+                    if categories.hate_threatening:
+                        reasons.append("threatening hate")
+                    if categories.self_harm:
+                        reasons.append("self-harm")
+                    if categories.self_harm_intent:
+                        reasons.append("self-harm intent")
+                    if categories.sexual:
+                        reasons.append("sexual content")
+                    if categories.sexual_minors:
+                        reasons.append("sexual content involving minors")
+                    if categories.violence:
+                        reasons.append("violence")
+                    if categories.violence_graphic:
+                        reasons.append("graphic violence")
+                    
+                    reason_str = ", ".join(reasons)
+                    logger.warning(f"Moderation flagged: {text[:50]}... Reasons: {reason_str}")
+                    return False, f"Question contains inappropriate content: {reason_str}"
             
-            # Check if any categories are flagged
-            if response.results[0].flagged:
-                categories = response.results[0].categories
-                reasons = []
-                
-                if categories.harassment:
-                    reasons.append("harassment")
-                if categories.harassment_threatening:
-                    reasons.append("threatening harassment")
-                if categories.hate:
-                    reasons.append("hate")
-                if categories.hate_threatening:
-                    reasons.append("threatening hate")
-                if categories.self_harm:
-                    reasons.append("self-harm")
-                if categories.self_harm_intent:
-                    reasons.append("self-harm intent")
-                if categories.sexual:
-                    reasons.append("sexual content")
-                if categories.sexual_minors:
-                    reasons.append("sexual content involving minors")
-                if categories.violence:
-                    reasons.append("violence")
-                if categories.violence_graphic:
-                    reasons.append("graphic violence")
-                
-                reason_str = ", ".join(reasons)
-                logger.warning(f"Moderation flagged: {text[:50]}... Reasons: {reason_str}")
-                return False, f"Question contains inappropriate content: {reason_str}"
+            except Exception as e:
+                # If moderation API fails, fall back to keyword filtering
+                logger.warning(f"Moderation API error, falling back to keyword filtering: {e}")
         
-        except Exception as e:
-            # If moderation API fails, fall back to keyword filtering
-            logger.error(f"Moderation API error: {e}")
-            text_lower = text.lower()
-            for keyword in self.OFFENSIVE_KEYWORDS:
-                if keyword in text_lower:
-                    return False, f"Question contains inappropriate content"
+        # Basic keyword filtering (used as fallback or when OpenAI isn't available)
+        text_lower = text.lower()
+        for keyword in self.OFFENSIVE_KEYWORDS:
+            if keyword in text_lower:
+                logger.warning(f"Keyword filter flagged: {text[:50]}... Keyword: {keyword}")
+                return False, f"Question contains inappropriate content"
         
         return True, ""
     

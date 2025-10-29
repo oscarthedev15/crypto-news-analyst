@@ -17,6 +17,7 @@ numpy<2.0  # Required for faiss-cpu compatibility
 # LangChain v1 packages
 langchain>=0.3.0
 langchain-openai>=0.2.0
+langchain-ollama>=0.1.0  # For local LLM support (free!)
 langchain-core>=0.3.0
 langchain-community>=0.4.1
 nest-asyncio==1.6.0
