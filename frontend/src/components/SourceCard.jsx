@@ -28,14 +28,6 @@ function SourceCard({ article, index, similarity_score, compact = false }) {
           <span className="source-date-compact">
             {formatDate(article.published_date)}
           </span>
-          {similarity_score !== undefined && (
-            <>
-              <span className="source-separator">•</span>
-              <span className="similarity-score-compact">
-                {(similarity_score * 100).toFixed(0)}%
-              </span>
-            </>
-          )}
         </span>
       </a>
     );
@@ -58,14 +50,6 @@ function SourceCard({ article, index, similarity_score, compact = false }) {
           <span className="source-date">
             {formatDate(article.published_date)}
           </span>
-          {similarity_score !== undefined && (
-            <>
-              <span className="source-separator">•</span>
-              <span className="similarity-score">
-                {(similarity_score * 100).toFixed(0)}%
-              </span>
-            </>
-          )}
         </span>
       </div>
     </a>

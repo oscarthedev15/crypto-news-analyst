@@ -18,7 +18,7 @@ const ChatMessage = ({ message }) => {
   };
 
   // Extract cited article numbers from the response content
-  // Supports both [Article N] and Article N formats
+  // Supports multiple citation formats to catch all article references
   const getCitedArticleNumbers = (text) => {
     if (!text) return new Set();
 
@@ -33,23 +33,35 @@ const ChatMessage = ({ message }) => {
       });
     }
 
-    // Match "Article N" format (without brackets) - look for various citation patterns
+    // Match "Article N" format (without brackets) - comprehensive patterns
     // Patterns like:
     // - "According to Article 1"
     // - "Article 1 from CoinTelegraph"
     // - "from Article 1"
+    // - "Article 1", "Article 2", etc. (standalone)
+    // - "Article 1 mentions", "Article 2 states", etc.
     const articlePatterns = [
-      /(?:According to|from|using|referring to|based on|per)\s+Article\s+(\d+)/gi,
-      /Article\s+(\d+)\s+(?:from|according to|in|per)/gi,
+      // Patterns before "Article N"
+      /(?:According to|from|using|referring to|based on|per|as mentioned in|as stated in|as reported in|mentioned in|stated in|reported in|as per|according to|in|via)\s+Article\s+(\d+)/gi,
+      // Patterns after "Article N"
+      /Article\s+(\d+)\s+(?:from|according to|in|per|states|reports|mentions|says|notes|indicates|explains|describes|details|discusses)/gi,
+      // Standalone "Article N" followed by punctuation, space, or end of sentence
+      /Article\s+(\d+)(?:[\s.,;:!?]|$)/gi,
+      // "Article N" at start of sentence or after period
+      /(?:^|\.\s+)Article\s+(\d+)/gim,
     ];
 
     articlePatterns.forEach((pattern) => {
-      const matches = text.matchAll(pattern);
-      for (const match of matches) {
-        const num = match[1];
-        if (num) {
-          citedNumbers.add(parseInt(num));
+      try {
+        const matches = text.matchAll(pattern);
+        for (const match of matches) {
+          const num = match[1];
+          if (num) {
+            citedNumbers.add(parseInt(num));
+          }
         }
+      } catch (e) {
+        // Ignore regex errors
       }
     });
 
@@ -75,25 +87,32 @@ const ChatMessage = ({ message }) => {
   };
 
   // Get sources that are actually cited in the response
+  // Show ALL sources that were retrieved (they were all used to generate the answer)
   const getCitedSources = () => {
     // Don't show sources if response indicates no information
     if (isNoInfoResponse()) return [];
 
-    if (!sources || sources.length === 0 || !content) return [];
+    // Always show all sources if they exist (regardless of citation detection)
+    if (!sources || sources.length === 0) return [];
 
-    const citedNumbers = getCitedArticleNumbers(content);
+    const citedNumbers = getCitedArticleNumbers(content || "");
 
-    // If no citations found, don't show sources
-    if (citedNumbers.size === 0) return [];
-
-    // Return only sources that are cited
+    // Return all sources, sorting cited ones first
     return sources
-      .map((source, index) => ({ source, originalIndex: index + 1 }))
-      .filter(({ originalIndex }) => citedNumbers.has(originalIndex))
-      .sort(
-        (a, b) =>
+      .map((source, index) => ({
+        source,
+        originalIndex: index + 1,
+        isCited: citedNumbers.has(index + 1),
+      }))
+      .sort((a, b) => {
+        // Cited sources first, then by similarity score
+        if (a.isCited !== b.isCited) {
+          return b.isCited - a.isCited;
+        }
+        return (
           (b.source.similarity_score || 0) - (a.source.similarity_score || 0)
-      );
+        );
+      });
   };
 
   return (

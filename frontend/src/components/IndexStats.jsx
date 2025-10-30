@@ -40,6 +40,16 @@ function IndexStats({ compact = false }) {
     return date.toLocaleDateString();
   };
 
+  const formatDateRange = (dateString) => {
+    if (!dateString) return "Unknown";
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }).format(date);
+  };
+
   // Check if ingestion is stale (older than 2 hours for hourly cron job)
   const isStale =
     stats.last_refresh &&
@@ -95,18 +105,31 @@ function IndexStats({ compact = false }) {
               )}
           </div>
 
-          {stats.last_refresh && (
-            <div className="stats-footer">
-              Last ingested: <strong>{formatDate(stats.last_refresh)}</strong>
-              {stats.last_scraped &&
-                stats.last_scraped !== stats.last_refresh && (
-                  <span className="stats-subtitle">
-                    {" "}
-                    (scraped: {formatDate(stats.last_scraped)})
-                  </span>
-                )}
-            </div>
-          )}
+          <div className="stats-footer">
+            {stats.date_range &&
+              stats.date_range.oldest &&
+              stats.date_range.newest && (
+                <div className="stats-date-range">
+                  Article date range:{" "}
+                  <strong>
+                    {formatDateRange(stats.date_range.oldest)} -{" "}
+                    {formatDateRange(stats.date_range.newest)}
+                  </strong>
+                </div>
+              )}
+            {stats.last_refresh && (
+              <div className="stats-last-refresh">
+                Last ingested: <strong>{formatDate(stats.last_refresh)}</strong>
+                {stats.last_scraped &&
+                  stats.last_scraped !== stats.last_refresh && (
+                    <span className="stats-subtitle">
+                      {" "}
+                      (scraped: {formatDate(stats.last_scraped)})
+                    </span>
+                  )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
