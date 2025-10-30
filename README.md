@@ -93,7 +93,27 @@ cp .env.example .env
 
 ---
 
-### 3. Initial Data Ingestion
+### 3. Start Qdrant (Vector DB)
+
+```bash
+# From project root of this repo
+docker compose up -d qdrant
+
+# Verify Qdrant is healthy
+curl http://localhost:6333/
+# Expect JSON with version information
+```
+
+Qdrant configuration used by the backend:
+
+- URL: `http://localhost:6333` (see `backend/app/config.py`)
+- Docker config: see `docker-compose.yml` (`qdrant` service, ports 6333/6334)
+
+If you prefer running without Docker, install and run Qdrant natively and ensure it listens on port 6333 or update `QDRANT_URL` in `backend/.env` accordingly.
+
+---
+
+### 4. Initial Data Ingestion
 
 ```bash
 # Fetch and index articles (5-10 minutes)
@@ -102,7 +122,7 @@ python scripts/ingest_news.py --max-articles-per-source 30
 
 ---
 
-### 4. Start Backend
+### 5. Start Backend
 
 ```bash
 uvicorn app.main:app --reload --port 8000
@@ -117,7 +137,7 @@ curl http://localhost:8000/api/health
 
 ---
 
-### 5. Frontend Setup
+### 6. Frontend Setup
 
 ```bash
 # New terminal
