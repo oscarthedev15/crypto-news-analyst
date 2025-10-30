@@ -30,7 +30,7 @@ async def generate_sse_response(
     question: str,
     db: Session,
     session_id: Optional[str] = None,
-    top_k: int = 5
+    top_k: int = 8
 ) -> AsyncGenerator[str, None]:
     """Generate SSE formatted response with streaming RAG agent
     
@@ -41,7 +41,7 @@ async def generate_sse_response(
         question: User's question
         db: Database session
         session_id: Optional session ID for chat history
-        top_k: Number of articles to retrieve (if search is performed)
+        top_k: Number of articles to retrieve (if search is performed, default: 8)
         
     Yields:
         SSE formatted strings
@@ -112,7 +112,7 @@ async def ask_question(
     request: QuestionRequest,
     db: Session = Depends(get_db),
     x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
-    top_k: int = Query(5, ge=1, le=20, description="Number of articles to retrieve (1-20)")
+    top_k: int = Query(8, ge=1, le=20, description="Number of articles to retrieve (1-20, default: 8)")
 ):
     """Handle user questions with RAG agent (intelligent search + streaming response)
     
@@ -120,7 +120,7 @@ async def ask_question(
         request: Question request with user question
         db: Database session
         x_session_id: Optional session ID from header for chat history
-        top_k: Number of articles to retrieve if search is performed (default: 5)
+        top_k: Number of articles to retrieve if search is performed (default: 8)
         
     Returns:
         StreamingResponse with SSE formatted chunks

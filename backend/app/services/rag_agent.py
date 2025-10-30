@@ -17,11 +17,11 @@ class RAGAgentService:
         self.search_service = get_search_service()
         self.llm_service = get_llm_service()
     
-    def _perform_search(self, query: str, db: Session, top_k: int = 5) -> tuple[str, List[Document]]:
+    def _perform_search(self, query: str, db: Session, top_k: int = 8) -> tuple[str, List[Document]]:
         """Perform semantic search and return formatted results"""
         try:
-            # Limit top_k to reasonable range
-            top_k = min(max(1, top_k), 10)
+            # Limit top_k to reasonable range (allow up to 20 for better multi-source synthesis)
+            top_k = min(max(1, top_k), 20)
             
             # Perform semantic search
             search_results = self.search_service.search(query, db, top_k=top_k)
@@ -107,12 +107,16 @@ CRITICAL PRIORITY: ARTICLES FIRST, GENERAL KNOWLEDGE LAST
    - NEVER lead with general knowledge when articles are available
    - Example: If articles mention "Bitcoin ETFs saw $470M outflows", lead with that specific fact, not general Bitcoin explanation
 
-2. USING ARTICLES EFFECTIVELY:
+2. USING ARTICLES EFFECTIVELY - MULTI-SOURCE SYNTHESIS REQUIRED:
+   - When multiple articles are provided, you MUST synthesize information from MULTIPLE sources
+   - IDEALLY use at least 2-3 different articles/sources in your response when available
    - Extract specific facts, numbers, dates, and details from articles
    - Cite EVERY fact from articles using format: "[Article N] from [Source] ([Date])"
    - Quote specific details: prices, amounts, company names, dates, events
-   - If multiple articles cover the topic, reference information from multiple articles
+   - If multiple articles cover the topic, actively reference information from multiple articles
+   - Compare and contrast different perspectives or details from different sources when relevant
    - Structure your response around the article content, not general knowledge
+   - AVOID responses that only cite a single article when multiple articles are available
 
 3. GENERAL KNOWLEDGE RESTRICTIONS:
    - DO NOT provide extensive general knowledge explanations when articles are available
@@ -152,7 +156,7 @@ REMEMBER: Your primary job is to share information from the articles. Articles a
         question: str,
         db: Session,
         chat_history: Optional[List[BaseMessage]] = None,
-        top_k: int = 5
+        top_k: int = 8
     ) -> AsyncGenerator[str, None]:
         """Generate streaming response using RAG agent with intelligent search
         
@@ -190,21 +194,32 @@ REMEMBER: Your primary job is to share information from the articles. Articles a
                 
                 # Build context message
                 if search_documents:
+                    num_articles = len(search_documents)
+                    multi_source_instruction = ""
+                    if num_articles > 1:
+                        multi_source_instruction = f"""
+- MULTI-SOURCE SYNTHESIS REQUIRED: You have {num_articles} articles available. USE MULTIPLE SOURCES in your answer.
+- Ideally reference information from at least 2-3 different articles when answering
+- Synthesize information across multiple articles to provide a comprehensive answer
+- Compare or combine details from different sources when relevant
+- DO NOT limit your answer to just one article when multiple are available"""
+                    
                     context_message = f"""CRITICAL: Answer the user's question using PRIMARILY information from these articles. These articles are your PRIMARY source of information.
 
-Here are relevant crypto news articles retrieved from the database:
+Here are relevant crypto news articles retrieved from the database (top-k retrieval):
 
 {search_results_text}
 
 INSTRUCTIONS:
 - Base your entire response on these articles
-- Start with specific facts, numbers, and details from the articles
+- Start with specific facts, numbers, and details from the articles{multi_source_instruction}
 - Cite EVERY fact using format: "[Article N] from [Source] ([Date])"
 - Only add minimal general context (1-2 sentences max) if absolutely needed for basic understanding
 - DO NOT lead with general knowledge - lead with article information
 - Extract and highlight specific details: prices, amounts, dates, events, company names from the articles
+- When multiple articles are available, actively use information from multiple sources
 
-Remember: Articles are PRIMARY, general knowledge is SECONDARY and MINIMAL."""
+Remember: Articles are PRIMARY, general knowledge is SECONDARY and MINIMAL. When multiple articles are provided, synthesize across them."""
                     
                     # Add context as a system message
                     messages.append(SystemMessage(content=context_message))
@@ -231,7 +246,7 @@ Remember: Articles are PRIMARY, general knowledge is SECONDARY and MINIMAL."""
         question: str,
         db: Session,
         chat_history: Optional[List[BaseMessage]] = None,
-        top_k: int = 5
+        top_k: int = 8
     ) -> List[Dict]:
         """Get search results formatted for frontend sources display
         

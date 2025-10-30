@@ -17,29 +17,38 @@ const ChatMessage = ({ message }) => {
       .replace(/\n\s*\n\s*\n/g, "\n\n"); // Clean up multiple empty lines
   };
 
-  // Extract cited article numbers from the response content
-  // Supports multiple citation formats to catch all article references
-  const getCitedArticleNumbers = (text) => {
-    if (!text) return new Set();
+  // Extract cited article numbers from the response content with their order
+  // Returns an array of article numbers in order of appearance
+  const getCitedArticleNumbersInOrder = (text) => {
+    if (!text) return [];
 
-    const citedNumbers = new Set();
+    // Track earliest position for each article number
+    const articlePositions = new Map();
+
+    // Helper to record match with earliest position
+    const recordMatch = (num, position) => {
+      const numInt = parseInt(num);
+      if (numInt) {
+        const currentPos = articlePositions.get(numInt);
+        // Record the earliest position for this article number
+        if (currentPos === undefined || position < currentPos) {
+          articlePositions.set(numInt, position);
+        }
+      }
+    };
 
     // Match [Article N] format (preferred format)
-    const bracketMatches = text.match(/\[Article\s+(\d+)\]/gi);
-    if (bracketMatches) {
-      bracketMatches.forEach((match) => {
-        const num = match.match(/\d+/);
-        if (num) citedNumbers.add(parseInt(num[0]));
-      });
+    try {
+      const bracketPattern = /\[Article\s+(\d+)\]/gi;
+      let match;
+      while ((match = bracketPattern.exec(text)) !== null) {
+        recordMatch(match[1], match.index);
+      }
+    } catch (e) {
+      // Ignore regex errors
     }
 
     // Match "Article N" format (without brackets) - comprehensive patterns
-    // Patterns like:
-    // - "According to Article 1"
-    // - "Article 1 from CoinTelegraph"
-    // - "from Article 1"
-    // - "Article 1", "Article 2", etc. (standalone)
-    // - "Article 1 mentions", "Article 2 states", etc.
     const articlePatterns = [
       // Patterns before "Article N"
       /(?:According to|from|using|referring to|based on|per|as mentioned in|as stated in|as reported in|mentioned in|stated in|reported in|as per|according to|in|via)\s+Article\s+(\d+)/gi,
@@ -51,21 +60,24 @@ const ChatMessage = ({ message }) => {
       /(?:^|\.\s+)Article\s+(\d+)/gim,
     ];
 
-    articlePatterns.forEach((pattern) => {
+    // Process all patterns and collect matches with positions
+    articlePatterns.forEach((patternStr) => {
       try {
-        const matches = text.matchAll(pattern);
-        for (const match of matches) {
-          const num = match[1];
-          if (num) {
-            citedNumbers.add(parseInt(num));
-          }
+        // Create a new regex instance for each pattern to avoid state issues
+        const pattern = new RegExp(patternStr.source, patternStr.flags);
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+          recordMatch(match[1], match.index);
         }
       } catch (e) {
         // Ignore regex errors
       }
     });
 
-    return citedNumbers;
+    // Convert map to array, sort by position, and return just the numbers
+    return Array.from(articlePositions.entries())
+      .sort((a, b) => a[1] - b[1]) // Sort by position
+      .map(([number]) => number); // Return just the article numbers
   };
 
   // Check if response indicates no information available
@@ -86,33 +98,39 @@ const ChatMessage = ({ message }) => {
     return noInfoPatterns.some((pattern) => contentLower.includes(pattern));
   };
 
-  // Get sources that are actually cited in the response
-  // Show ALL sources that were retrieved (they were all used to generate the answer)
+  // Get sources that are actually cited in the response, ordered by appearance
+  // Only return sources that are explicitly cited in the response text
   const getCitedSources = () => {
     // Don't show sources if response indicates no information
     if (isNoInfoResponse()) return [];
 
-    // Always show all sources if they exist (regardless of citation detection)
+    // No sources available
     if (!sources || sources.length === 0) return [];
 
-    const citedNumbers = getCitedArticleNumbers(content || "");
+    // Get cited article numbers in order of appearance
+    const citedNumbersInOrder = getCitedArticleNumbersInOrder(content || "");
 
-    // Return all sources, sorting cited ones first
-    return sources
-      .map((source, index) => ({
-        source,
-        originalIndex: index + 1,
-        isCited: citedNumbers.has(index + 1),
-      }))
-      .sort((a, b) => {
-        // Cited sources first, then by similarity score
-        if (a.isCited !== b.isCited) {
-          return b.isCited - a.isCited;
+    // If no citations found, don't show any sources
+    if (citedNumbersInOrder.length === 0) return [];
+
+    // Map article numbers (1-indexed) to sources (0-indexed)
+    const citedSources = citedNumbersInOrder
+      .map((articleNum) => {
+        // Article numbers are 1-indexed, sources array is 0-indexed
+        const sourceIndex = articleNum - 1;
+        if (sourceIndex >= 0 && sourceIndex < sources.length) {
+          return {
+            source: sources[sourceIndex],
+            citationOrder: citedNumbersInOrder.indexOf(articleNum),
+            articleNumber: articleNum,
+          };
         }
-        return (
-          (b.source.similarity_score || 0) - (a.source.similarity_score || 0)
-        );
-      });
+        return null;
+      })
+      .filter((item) => item !== null); // Remove any null entries (invalid article numbers)
+
+    // Return sources in citation order (already ordered by appearance in response)
+    return citedSources;
   };
 
   return (
@@ -139,11 +157,11 @@ const ChatMessage = ({ message }) => {
                     📚 Sources ({citedSources.length})
                   </div>
                   <div className="sources-list-compact">
-                    {citedSources.map(({ source, originalIndex }) => (
+                    {citedSources.map(({ source, articleNumber }) => (
                       <SourceCard
                         key={source.id}
                         article={source}
-                        index={originalIndex}
+                        index={articleNumber}
                         similarity_score={source.similarity_score}
                         compact={true}
                       />
