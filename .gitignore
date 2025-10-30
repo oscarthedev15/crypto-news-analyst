@@ -129,8 +129,7 @@ frontend/.env.*.local
 *.db-wal
 *.db-journal
 
-# Database data directory
-backend/data/
+# Database files (SQLite)
 data/*.db
 
 # ==========================================
@@ -140,7 +139,7 @@ qdrant-storage/
 qdrant_vectorstore/
 
 # ==========================================
-# FAISS & ML Models (legacy)
+# FAISS & ML Models (legacy - migrated to Qdrant)
 # ==========================================
 data/faiss.index
 data/article_ids.pkl

@@ -1,6 +1,4 @@
 import logging
-import pickle
-from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -19,7 +17,6 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
 COLLECTION_NAME = "crypto_news_articles"
 
 
@@ -30,7 +27,6 @@ class SearchService:
         self.vectorstore = None
         self.embedding_service = get_embedding_service()
         self.sparse_embeddings = None
-        self.article_ids_map = {}
         self._index_point_count = None
         self.qdrant_client = None
 
@@ -73,8 +69,6 @@ class SearchService:
             logger.error(error_msg)
             raise RuntimeError(error_msg)
         
-        DATA_DIR.mkdir(exist_ok=True)
-        
         articles = db.query(Article).all()
         if not articles:
             logger.warning("No articles found to index")
@@ -83,10 +77,8 @@ class SearchService:
         logger.info(f"Indexing {len(articles)} articles...")
         
         documents = []
-        self.article_ids_map = {}
         
         for article in articles:
-            doc_id = f"article_{article.id}"
             doc = Document(
                 page_content=f"{article.title} {article.content}",
                 metadata={
@@ -98,7 +90,6 @@ class SearchService:
                 }
             )
             documents.append(doc)
-            self.article_ids_map[doc_id] = article.id
         
         logger.info("Building Qdrant vector store with hybrid search (dense + sparse)...")
         
@@ -139,11 +130,6 @@ class SearchService:
             vectorstore_kwargs["api_key"] = settings.qdrant_api_key
         self.vectorstore = QdrantVectorStore.from_documents(**vectorstore_kwargs)
         logger.info("Built index with hybrid search - combining semantic and keyword matching")
-        
-        # Save article IDs mapping
-        ids_map_file = DATA_DIR / "article_ids_map.pkl"
-        with open(ids_map_file, 'wb') as f:
-            pickle.dump(self.article_ids_map, f)
         
         logger.info(f"Semantic index built successfully. Indexed {len(articles)} articles.")
         
@@ -240,15 +226,9 @@ class SearchService:
                 load_kwargs = self._build_load_kwargs(include_sparse=False)
                 self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
             
-            # Load article IDs mapping
-            ids_map_file = DATA_DIR / "article_ids_map.pkl"
-            if ids_map_file.exists():
-                with open(ids_map_file, 'rb') as f:
-                    self.article_ids_map = pickle.load(f)
-            
             # Store current point count to detect future changes
             self._index_point_count = self._get_collection_point_count()
-            num_docs = len(self.article_ids_map)
+            num_docs = self._index_point_count or 0
             logger.info(f"Loaded Qdrant vectorstore with {num_docs} articles")
             
             return True
@@ -287,10 +267,12 @@ class SearchService:
             return []
         
         try:
+            # Get document count from Qdrant for limiting search results
+            max_docs = self._get_collection_point_count() or 1000  # Fallback to 1000 if unavailable
             # Get semantic results with scores using hybrid search
             semantic_docs_with_scores = self.vectorstore.similarity_search_with_score(
                 query, 
-                k=min(top_k * 2, len(self.article_ids_map))
+                k=min(top_k * 2, max_docs)
             )
             
             results = []
@@ -380,7 +362,7 @@ class SearchService:
                     "oldest": oldest.published_date.isoformat() + "Z" if oldest and oldest.published_date else None,
                     "newest": newest.published_date.isoformat() + "Z" if newest and newest.published_date else None,
                 },
-                "indexed_articles": len(self.article_ids_map) if self.article_ids_map else 0,
+                "indexed_articles": self._get_collection_point_count() or 0,
                 "last_refresh": last_ingested.created_at.isoformat() + "Z" if last_ingested and last_ingested.created_at else None,
                 "last_scraped": last_scraped.scraped_at.isoformat() + "Z" if last_scraped and last_scraped.scraped_at else None,
             }

@@ -50,8 +50,18 @@ flowchart TB
 - **Cron**: Configurable scheduling (1min/5min/hourly/daily)
 - **Scraper**: `httpx` + `BeautifulSoup` with User-Agent headers, parallel fetching
 - **Database**: SQLite with article metadata (title, content, URL, dates)
-- **Embeddings**: `all-MiniLM-L6-v2` (384-dim vectors, ~50MB model)
-- **Qdrant**: Vector similarity search
+- **Embeddings**: `all-mpnet-base-v2` (768-dim vectors, better quality than previous 384-dim model)
+- **Qdrant**: Vector similarity search with hybrid search (dense + sparse vectors)
+
+**Storage Architecture:**
+
+- **SQLite** (`backend/news_articles.db`): Article metadata and content
+- **Qdrant** (`qdrant-storage/`): Vector embeddings + metadata in single unified storage
+  - Dense vectors (semantic embeddings, 768-dim)
+  - Sparse vectors (BM25 keyword matching for hybrid search)
+  - Article metadata (ID, title, source, URL, dates) stored as payload
+  - No separate mapping files needed - Qdrant stores everything
+  - Created automatically when Docker container starts
 
 ---
 
@@ -86,8 +96,8 @@ flowchart TB
 | -------------- | ------------------------------------------ |
 | **Frontend**   | React 18, Vite, Server-Sent Events         |
 | **Backend**    | FastAPI, SQLAlchemy, LangChain             |
-| **Search**     | Qdrant (semantic)                          |
-| **Embeddings** | sentence-transformers (all-MiniLM-L6-v2)   |
+| **Search**     | Qdrant (hybrid: dense + sparse vectors)    |
+| **Embeddings** | sentence-transformers (all-mpnet-base-v2)  |
 | **LLM**        | Ollama (local) or OpenAI (cloud)           |
 | **Moderation** | transformers pipeline (unitary/toxic-bert) |
 | **Scraping**   | httpx, BeautifulSoup                       |
@@ -101,8 +111,9 @@ flowchart TB
 ### Dynamic Index Reloading
 
 - **Problem**: Cron updates indexes while server runs
-- **Solution**: Check file modification times before each search
-- **Benefit**: No server restart needed for new articles
+- **Solution**: Check Qdrant collection point count before each search via Qdrant API
+- **Benefit**: No server restart needed for new articles, automatic index updates detected via Qdrant API
+- **Architecture**: All search data (vectors, metadata, article IDs) stored in Qdrant - no separate pickle files or mapping directories
 
 ### LLM Provider Auto-Detection
 
@@ -129,9 +140,10 @@ flowchart TB
 2. FastAPI checks session for chat history
 3. Moderation validates query (passes ✓)
 4. Search service:
-   - Checks if indexes updated (auto-reload if needed)
-   - Generates query embedding
-   - Qdrant returns candidates with similarity scores
+   - Checks Qdrant collection point count (auto-reloads if changed)
+   - Generates query embedding (dense) + sparse embedding (BM25)
+   - Qdrant hybrid search returns candidates with similarity scores
+   - Retrieves article IDs from Qdrant metadata payload
    - Filters last 30 days, returns top 5
 5. LLM builds context with articles + chat history
 6. Streams tokens via SSE:

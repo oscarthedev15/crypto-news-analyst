@@ -223,6 +223,20 @@ SIMILARITY_THRESHOLD=0.3
 
 ---
 
+## 📦 Storage Architecture
+
+**Data Storage:**
+
+- **SQLite Database** (`backend/news_articles.db`): Article metadata (title, content, URL, dates, source)
+- **Qdrant Vector Database** (`qdrant-storage/`): Vector embeddings + metadata for semantic search
+  - Created automatically when Docker container starts
+  - Stores dense vectors (embeddings), sparse vectors (BM25), and article metadata
+  - Single source of truth for search indexes - no separate mapping files needed
+
+**Key Design Decision:** All search-related data (vectors, metadata, article IDs) is stored in Qdrant. This eliminates the need for separate pickle files or mapping directories, simplifying the architecture and ensuring consistency.
+
+---
+
 ## 🛠️ Tech Stack
 
 **Backend:** FastAPI, SQLAlchemy, Qdrant, sentence-transformers, LangChain, transformers (unitary/toxic-bert), SQLite
