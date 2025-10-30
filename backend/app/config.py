@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     similarity_threshold: float = 0.3
     
     # News sources
-    news_sources: list = ["CoinTelegraph", "TheDefiant", "Decrypt"]
+    news_sources: list = ["CoinTelegraph", "TheDefiant", "DLNews"]
     
     # App
     app_title: str = "Crypto News Agent"

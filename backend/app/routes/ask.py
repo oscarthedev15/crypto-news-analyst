@@ -109,7 +109,7 @@ async def get_sources(db: Session = Depends(get_db)):
             "url": {
                 "CoinTelegraph": "https://cointelegraph.com",
                 "TheDefiant": "https://thedefiant.io",
-                "Decrypt": "https://decrypt.co"
+                "DLNews": "https://www.dlnews.com"
             }.get(source, "")
         })
     
