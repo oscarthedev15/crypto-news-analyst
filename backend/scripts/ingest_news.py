@@ -39,7 +39,7 @@ async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
     
     Args:
         max_articles: Max NEW articles per source to fetch
-        force_rebuild: Force rebuild of FAISS index (unused - index is always rebuilt after ingestion)
+        force_rebuild: Force rebuild of Qdrant index (unused - index is always rebuilt after ingestion)
     """
     logger.info(f"Starting article ingestion (max {max_articles} NEW per source)...")
     
@@ -105,12 +105,18 @@ async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
         total = db.query(Article).count()
         logger.info(f"Total articles in database: {total}")
         
-        # Rebuild FAISS index only if new articles were ingested
+        # Rebuild Qdrant index only if new articles were ingested
+        # Note: build_index() requires hybrid search (dense + sparse) and will fail if sparse embeddings unavailable
         search_service = get_search_service()
         if new_count > 0:
-            logger.info("Rebuilding FAISS index (new articles detected)...")
-            search_service.build_index(db)
-            logger.info("FAISS index rebuilt successfully")
+            logger.info("Rebuilding Qdrant index with hybrid search (new articles detected)...")
+            try:
+                search_service.build_index(db)
+                logger.info("Qdrant index rebuilt successfully with hybrid search")
+            except RuntimeError as e:
+                logger.error(f"Failed to build index: {e}")
+                logger.error("Index building requires hybrid search. Please ensure fastembed>=0.2.0 is installed.")
+                raise
         else:
             logger.info("No new articles; skipping index rebuild")
         
@@ -149,7 +155,7 @@ def main():
     parser.add_argument(
         "--force-rebuild-index",
         action="store_true",
-        help="Force rebuild of FAISS index"
+        help="Force rebuild of Qdrant index"
     )
     
     args = parser.parse_args()

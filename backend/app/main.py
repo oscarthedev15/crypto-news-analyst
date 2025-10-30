@@ -43,7 +43,7 @@ async def startup_event():
     init_db()
     logger.info("Database initialized")
     
-    # Load or build FAISS index
+    # Load or build Qdrant index
     search_service = get_search_service()
     if not search_service.load_index():
         logger.warning("Search index not found. Please run: python scripts/ingest_news.py")

@@ -1,28 +1,38 @@
 from sentence_transformers import SentenceTransformer
+from langchain_huggingface import HuggingFaceEmbeddings
 import numpy as np
 import logging
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingService:
-    """Custom embeddings service using sentence-transformers
+    """Embeddings service using LangChain HuggingFaceEmbeddings wrapper
     
-    Provides efficient embedding generation for search functionality
+    Provides efficient embedding generation with LangChain integration
     """
     
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
+    def __init__(self, model_name: str = None):
         """Initialize embedding service
         
         Args:
-            model_name: Name of the sentence-transformers model to use
+            model_name: Name of the sentence-transformers model to use (defaults to config)
         """
-        self.model_name = model_name
+        self.model_name = model_name or settings.embedding_model
         logger.info(f"Loading embedding model: {self.model_name}")
         
-        # Use sentence-transformers directly (stable, no segfaults)
-        self.model = SentenceTransformer(model_name)
-        logger.info(f"Model loaded successfully")
+        # Use LangChain's HuggingFaceEmbeddings from langchain-huggingface package
+        # This is the updated, non-deprecated version
+        self.langchain_embeddings = HuggingFaceEmbeddings(
+            model_name=self.model_name,
+            model_kwargs={'device': 'cpu'},
+            encode_kwargs={'normalize_embeddings': True}
+        )
+        
+        # Keep direct access for compatibility
+        self.model = SentenceTransformer(self.model_name)
+        logger.info(f"Model loaded successfully (dim: {self.model.get_sentence_embedding_dimension()})")
     
     def generate_embedding(self, text: str) -> 'numpy.ndarray':
         """Generate embedding for a single text (used by SearchService)
@@ -79,7 +89,7 @@ class EmbeddingService:
 _embedding_service = None
 
 
-def get_embedding_service(model_name: str = "all-MiniLM-L6-v2") -> EmbeddingService:
+def get_embedding_service(model_name: str = None) -> EmbeddingService:
     """Get or create the embedding service singleton"""
     global _embedding_service
     if _embedding_service is None:

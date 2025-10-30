@@ -1,83 +1,86 @@
-import faiss
-import numpy as np
-import pickle
 import logging
-import re
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
-from datetime import datetime, timedelta
+from datetime import datetime
+from uuid import uuid4
 from sqlalchemy.orm import Session
-from rank_bm25 import BM25Okapi
+
+from langchain_qdrant import (
+    QdrantVectorStore,
+    RetrievalMode,
+    FastEmbedSparse,
+)
+from langchain_core.documents import Document
+from qdrant_client import QdrantClient
+
 from app.models import Article
 from app.services.embeddings import get_embedding_service
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path("data")
-INDEX_FILE = DATA_DIR / "faiss.index"
-ARTICLE_IDS_FILE = DATA_DIR / "article_ids.pkl"
-METADATA_FILE = DATA_DIR / "article_metadata.pkl"
-BM25_INDEX_FILE = DATA_DIR / "bm25.pkl"
+# Use path relative to this file's location
+# This file is at: backend/app/services/search.py
+# Data directory is at: backend/data/
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+COLLECTION_NAME = "crypto_news_articles"
+
 
 class SearchService:
-    """Service for hybrid search using FAISS (semantic) + BM25 (keyword)"""
+    """Service for semantic search using LangChain Qdrant with hybrid search (dense + sparse)"""
     
     def __init__(self):
-        self.index = None
-        self.article_ids = None
-        self.metadata = None
-        self.bm25 = None
-        self.tokenized_corpus = None
+        self.vectorstore = None
         self.embedding_service = get_embedding_service()
-        self._index_load_time = None  # Track when index was last loaded
-    
-    def _tokenize(self, text: str) -> List[str]:
-        """Enhanced tokenization for BM25 with domain/brand name handling
-        
-        Args:
-            text: Text to tokenize
-            
-        Returns:
-            List of lowercase tokens with normalized variations
-        """
-        text_lower = text.lower()
-        
-        # Extract basic tokens (keep dots for domains like "pump.fun")
-        tokens = re.findall(r'\b[\w.]+\b', text_lower)
-        
-        # Add normalized variations for tokens with dots
-        # This handles cases like "pump.fun" vs "pumpfun"
-        normalized_tokens = []
-        for token in tokens:
-            normalized_tokens.append(token)
-            # If token contains dot, also add version without dots
-            if '.' in token:
-                no_dot = token.replace('.', '')
-                if no_dot:  # Only add if non-empty
-                    normalized_tokens.append(no_dot)
-            # Also add version with dots for tokens that might be written with dots
-            # e.g., "pumpfun" could be "pump.fun"
-            elif len(token) > 6:  # Only for longer tokens
-                # Common patterns: add dot before last 3-4 chars (e.g., "pumpfun" → "pump.fun")
-                for split_pos in [3, 4]:
-                    if len(token) > split_pos:
-                        with_dot = token[:split_pos] + '.' + token[split_pos:]
-                        normalized_tokens.append(with_dot)
-        
-        return list(set(normalized_tokens))  # Remove duplicates
+        self.sparse_embeddings = None
+        self.article_ids_map = {}
+        self._index_point_count = None  # Track point count instead of modification time
+        self.qdrant_client = None
+
+        # Initialize Qdrant client for server connection
+        try:
+            client_kwargs = {"url": settings.qdrant_url}
+            if settings.qdrant_api_key:
+                client_kwargs["api_key"] = settings.qdrant_api_key
+            self.qdrant_client = QdrantClient(**client_kwargs)
+            logger.info(f"Initialized Qdrant client: {settings.qdrant_url}")
+        except Exception as e:
+            logger.error(f"Failed to initialize Qdrant client: {e}")
+            raise
+
+        # Initialize sparse embeddings for hybrid search
+        # Hybrid search provides better results by combining semantic (dense) and keyword (sparse) matching
+        try:
+            self.sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+            logger.info("Initialized FastEmbed sparse embeddings for hybrid search")
+        except Exception as e:
+            logger.error(
+                f"Failed to initialize sparse embeddings: {e}. This will degrade search quality. "
+                f"Please ensure fastembed>=0.2.0 is installed correctly."
+            )
+            # Note: We still set sparse_embeddings to None to allow fallback to dense-only mode
+            # but this should be rare and indicates a configuration issue
     
     def build_index(self, db: Session):
-        """Build FAISS (semantic) and BM25 (keyword) indexes from all articles in database
+        """Build Qdrant semantic search index using LangChain with hybrid search
         
-        Args:
-            db: SQLAlchemy session
+        REQUIRES: Hybrid search (dense + sparse embeddings) - will fail if sparse embeddings unavailable
         """
-        logger.info("Building hybrid search indexes (FAISS + BM25)...")
+        logger.info("Building semantic search index with LangChain Qdrant (hybrid search)...")
         
-        # Create data directory if it doesn't exist
+        # Ensure sparse embeddings are available - hybrid search is required
+        if not self.sparse_embeddings:
+            error_msg = (
+                "Cannot build index: Sparse embeddings not available. "
+                "Hybrid search is required for index building. "
+                "Please ensure fastembed>=0.2.0 is installed correctly. "
+                "Install with: pip install fastembed>=0.2.0"
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+        
         DATA_DIR.mkdir(exist_ok=True)
         
-        # Query all articles
         articles = db.query(Article).all()
         if not articles:
             logger.warning("No articles found to index")
@@ -85,115 +88,158 @@ class SearchService:
         
         logger.info(f"Indexing {len(articles)} articles...")
         
-        # Generate embeddings for all articles (FAISS)
-        texts = [f"{a.title} {a.content}" for a in articles]
-        embeddings = self.embedding_service.generate_embeddings_batch(texts)
+        # Prepare documents for LangChain
+        documents = []
+        self.article_ids_map = {}
         
-        # Create FAISS index (semantic search)
-        dimension = embeddings.shape[1]
-        self.index = faiss.IndexFlatL2(dimension)
-        self.index.add(embeddings)
-        
-        # Build BM25 index (keyword search)
-        logger.info("Building BM25 keyword index...")
-        self.tokenized_corpus = [self._tokenize(text) for text in texts]
-        self.bm25 = BM25Okapi(self.tokenized_corpus)
-        
-        # Store article IDs and metadata
-        self.article_ids = np.array([a.id for a in articles], dtype=np.int64)
-        self.metadata = {}
-        
-        for i, article in enumerate(articles):
-            self.metadata[int(self.article_ids[i])] = {
-                "source": article.source,
-                "published_date": article.published_date.isoformat() + "Z" if article.published_date else None,
-                "scraped_at": article.scraped_at.isoformat() + "Z" if article.scraped_at else None,
-                "created_at": article.created_at.isoformat() + "Z" if article.created_at else None,
-                "title": article.title,
-            }
-        
-        # Save to disk
-        faiss.write_index(self.index, str(INDEX_FILE))
-        with open(ARTICLE_IDS_FILE, 'wb') as f:
-            pickle.dump(self.article_ids, f)
-        with open(METADATA_FILE, 'wb') as f:
-            pickle.dump(self.metadata, f)
-        with open(BM25_INDEX_FILE, 'wb') as f:
-            pickle.dump({'bm25': self.bm25, 'tokenized_corpus': self.tokenized_corpus}, f)
-        
-        logger.info(f"Hybrid indexes built successfully. Indexed {len(articles)} articles.")
-    
-    def _get_index_modification_time(self) -> Optional[float]:
-        """Get the latest modification time of index files
-        
-        Returns:
-            Latest modification timestamp, or None if files don't exist
-        """
-        try:
-            required_files = [INDEX_FILE, ARTICLE_IDS_FILE, METADATA_FILE]
-            if not all(f.exists() for f in required_files):
-                return None
+        for article in articles:
+            text = f"{article.title} {article.content}"
+            doc_id = f"article_{article.id}"
             
-            # Get the most recent modification time
-            mod_times = [f.stat().st_mtime for f in required_files]
-            return max(mod_times)
+            # Create LangChain Document with metadata
+            doc = Document(
+                page_content=text,
+                metadata={
+                    "id": article.id,
+                    "title": article.title,
+                    "source": article.source,
+                    "url": article.url,
+                    "published_date": article.published_date.isoformat() + "Z" if article.published_date else None,
+                }
+            )
+            documents.append(doc)
+            self.article_ids_map[doc_id] = article.id
+        
+        # Build Qdrant vector store with hybrid search (required)
+        # Hybrid search combines semantic (dense) and keyword (sparse) matching
+        logger.info("Building Qdrant vector store with hybrid search (dense + sparse)...")
+        vectorstore_kwargs = {
+            "documents": documents,
+            "embedding": self.embedding_service.langchain_embeddings,
+            "sparse_embedding": self.sparse_embeddings,
+            "url": settings.qdrant_url,
+            "collection_name": COLLECTION_NAME,
+            "retrieval_mode": RetrievalMode.HYBRID,
+            "vector_name": "dense",
+        }
+        if settings.qdrant_api_key:
+            vectorstore_kwargs["api_key"] = settings.qdrant_api_key
+        self.vectorstore = QdrantVectorStore.from_documents(**vectorstore_kwargs)
+        logger.info("Built index with hybrid search - combining semantic and keyword matching")
+        
+        # Save article IDs mapping
+        import pickle
+        ids_map_file = DATA_DIR / "article_ids_map.pkl"
+        with open(ids_map_file, 'wb') as f:
+            pickle.dump(self.article_ids_map, f)
+        
+        logger.info(f"Semantic index built successfully. Indexed {len(articles)} articles.")
+        
+        # Update point count after building index
+        self._index_point_count = self._get_collection_point_count()
+    
+    def _get_collection_point_count(self) -> Optional[int]:
+        """Get the current point count of the collection"""
+        try:
+            if not self.qdrant_client:
+                return None
+            # Get collection info which includes point count
+            collection_info = self.qdrant_client.get_collection(COLLECTION_NAME)
+            if collection_info:
+                return collection_info.points_count
+            return None
         except Exception as e:
-            logger.error(f"Error checking index modification time: {e}")
+            logger.debug(f"Error getting collection point count: {e}")
             return None
     
     def _should_reload_index(self) -> bool:
-        """Check if index files have been modified since last load
-        
-        Returns:
-            True if index should be reloaded, False otherwise
-        """
-        if self.index is None or self._index_load_time is None:
+        """Check if collection has changed by comparing point count"""
+        if self.vectorstore is None or self._index_point_count is None:
             return True
         
-        current_mod_time = self._get_index_modification_time()
-        if current_mod_time is None:
+        current_point_count = self._get_collection_point_count()
+        if current_point_count is None:
+            # If we can't get point count, don't reload (safer)
             return False
         
-        # Reload if index files have been modified
-        return current_mod_time > self._index_load_time
+        # Reload if point count has changed (new articles added)
+        return current_point_count != self._index_point_count
     
     def load_index(self, force: bool = False) -> bool:
-        """Load FAISS and BM25 indexes from disk
+        """Load Qdrant vectorstore from server
         
-        Args:
-            force: Force reload even if already loaded
-        
-        Returns:
-            True if successful, False otherwise
+        Tries to load with hybrid search first (if sparse embeddings available),
+        falls back to dense-only if that fails or sparse embeddings unavailable.
         """
         try:
-            required_files = [INDEX_FILE, ARTICLE_IDS_FILE, METADATA_FILE]
-            if not all(f.exists() for f in required_files):
-                logger.warning("Index files not found")
+            # Check if collection exists
+            if not self.qdrant_client:
+                logger.error("Qdrant client not initialized")
                 return False
             
-            # Load FAISS index
-            self.index = faiss.read_index(str(INDEX_FILE))
+            collections = self.qdrant_client.get_collections().collections
+            collection_exists = any(c.name == COLLECTION_NAME for c in collections)
             
-            with open(ARTICLE_IDS_FILE, 'rb') as f:
-                self.article_ids = pickle.load(f)
-            
-            with open(METADATA_FILE, 'rb') as f:
-                self.metadata = pickle.load(f)
-            
-            # Load BM25 index (if available)
-            if BM25_INDEX_FILE.exists():
-                with open(BM25_INDEX_FILE, 'rb') as f:
-                    bm25_data = pickle.load(f)
-                    self.bm25 = bm25_data['bm25']
-                    self.tokenized_corpus = bm25_data['tokenized_corpus']
-                logger.info(f"Loaded hybrid indexes (FAISS + BM25) with {len(self.article_ids)} articles")
+            if not collection_exists:
+                logger.warning(f"Qdrant collection '{COLLECTION_NAME}' not found on server")
+                return False
+
+            # Try hybrid search first if sparse embeddings are available
+            # This is preferred for better search quality
+            if self.sparse_embeddings:
+                try:
+                    load_kwargs = {
+                        "embedding": self.embedding_service.langchain_embeddings,
+                        "sparse_embedding": self.sparse_embeddings,
+                        "collection_name": COLLECTION_NAME,
+                        "url": settings.qdrant_url,
+                        "vector_name": "dense",
+                    }
+                    if settings.qdrant_api_key:
+                        load_kwargs["api_key"] = settings.qdrant_api_key
+                    self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
+                    logger.info("Loaded vectorstore with hybrid search (dense + sparse)")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to load with hybrid search: {e}. "
+                        f"Trying dense-only mode..."
+                    )
+                    # Fall back to dense-only if hybrid load fails
+                    # (e.g., collection was built without sparse vectors)
+                    load_kwargs = {
+                        "embedding": self.embedding_service.langchain_embeddings,
+                        "collection_name": COLLECTION_NAME,
+                        "url": settings.qdrant_url,
+                        "vector_name": "dense",
+                    }
+                    if settings.qdrant_api_key:
+                        load_kwargs["api_key"] = settings.qdrant_api_key
+                    self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
+                    logger.info("Loaded vectorstore with dense-only search")
             else:
-                logger.warning("BM25 index not found - using semantic search only. Run index rebuild to enable hybrid search.")
-                logger.info(f"Loaded FAISS index with {len(self.article_ids)} articles")
+                # Dense-only mode (sparse embeddings not available)
+                logger.warning("Loading with dense-only search (sparse embeddings unavailable)")
+                load_kwargs = {
+                    "embedding": self.embedding_service.langchain_embeddings,
+                    "collection_name": COLLECTION_NAME,
+                    "url": settings.qdrant_url,
+                    "vector_name": "dense",
+                }
+                if settings.qdrant_api_key:
+                    load_kwargs["api_key"] = settings.qdrant_api_key
+                self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
             
-            # Track when we loaded the index
-            self._index_load_time = self._get_index_modification_time()
+            # Load article IDs mapping
+            import pickle
+            ids_map_file = DATA_DIR / "article_ids_map.pkl"
+            if ids_map_file.exists():
+                with open(ids_map_file, 'rb') as f:
+                    self.article_ids_map = pickle.load(f)
+            
+            # Store current point count to detect future changes
+            self._index_point_count = self._get_collection_point_count()
+            num_docs = len(self.article_ids_map)
+            logger.info(f"Loaded Qdrant vectorstore with {num_docs} articles")
             
             return True
         except Exception as e:
@@ -206,101 +252,81 @@ class SearchService:
         db: Session,
         top_k: int = 5,
         date_filter: Optional[datetime] = None,
-        keyword_boost: float = 0.3
+        keyword_boost: float = 0.3  # Kept for API compatibility, but not used
     ) -> List[Tuple[Article, float]]:
-        """Hybrid search combining semantic (FAISS) and keyword (BM25) matching
+        """Semantic search using LangChain Qdrant vectorstore with hybrid search
         
         Args:
             query: Search query string
             db: SQLAlchemy session
             top_k: Number of results to return
             date_filter: Only return articles after this date
-            keyword_boost: Weight for keyword matching (0.0-1.0). Default 0.3 means 70% semantic, 30% keyword
+            keyword_boost: Deprecated parameter (kept for API compatibility)
             
         Returns:
-            List of (Article, hybrid_score) tuples
+            List of (Article, score) tuples
         """
-        # Check if index needs to be reloaded (new articles indexed)
+        # Check if index needs to be reloaded
         if self._should_reload_index():
-            logger.info("Detected index update, reloading indexes...")
+            logger.info("Detected index update, reloading index...")
             if self.load_index():
-                logger.info("Indexes reloaded successfully")
+                logger.info("Index reloaded successfully")
             else:
-                logger.warning("Failed to reload indexes")
+                logger.warning("Failed to reload index")
         
-        if self.index is None:
+        if self.vectorstore is None:
             logger.warning("Search index not loaded")
             return []
         
         try:
-            # Generate embedding for query (semantic search)
-            query_embedding = self.embedding_service.generate_embedding(query)
-            
-            if query_embedding is None or np.all(query_embedding == 0):
-                logger.warning("Could not generate embedding for query")
-                return []
-            
-            # FAISS semantic search
-            distances, indices = self.index.search(
-                np.array([query_embedding], dtype=np.float32),
-                min(top_k * 4, len(self.article_ids))  # Get more results for hybrid ranking
+            # Get semantic results with scores using hybrid search
+            semantic_docs_with_scores = self.vectorstore.similarity_search_with_score(
+                query, 
+                k=min(top_k * 2, len(self.article_ids_map))
             )
             
-            # Convert distances to similarity scores (0-1 range)
-            # L2 distance: lower = more similar
-            semantic_scores = 1 / (1 + distances[0])
-            
-            # BM25 keyword search (if available)
-            bm25_scores = None
-            if self.bm25 is not None:
-                tokenized_query = self._tokenize(query)
-                bm25_raw_scores = self.bm25.get_scores(tokenized_query)
-                # Normalize BM25 scores to 0-1 range
-                max_bm25 = max(bm25_raw_scores) if len(bm25_raw_scores) > 0 else 1.0
-                if max_bm25 > 0:
-                    bm25_scores = bm25_raw_scores / max_bm25
-                else:
-                    bm25_scores = bm25_raw_scores
-            
-            # Combine scores using hybrid weighting
+            # Convert to (Article, score) tuples
             results = []
-            threshold = 0.25  # Lower threshold for hybrid search
             
-            for idx, semantic_score in zip(indices[0], semantic_scores):
-                # Calculate hybrid score
-                if bm25_scores is not None:
-                    bm25_score = bm25_scores[idx]
-                    # Weighted combination: (1 - keyword_boost) * semantic + keyword_boost * keyword
-                    hybrid_score = (1 - keyword_boost) * semantic_score + keyword_boost * bm25_score
-                else:
-                    # Fall back to semantic only
-                    hybrid_score = semantic_score
-                
-                if hybrid_score < threshold:
+            # Qdrant returns similarity scores (higher is better for cosine similarity)
+            # Score is already normalized between 0 and 1 for cosine similarity
+            if semantic_docs_with_scores:
+                best_score = semantic_docs_with_scores[0][1]
+            else:
+                best_score = 1.0
+            
+            for doc, score in semantic_docs_with_scores:
+                article_id = doc.metadata.get("id")
+                if not article_id:
                     continue
                 
-                article_id = int(self.article_ids[idx])
                 article = db.query(Article).filter(Article.id == article_id).first()
-                
                 if article is None:
                     continue
                 
-                # Apply date filter if provided
+                # Apply date filter
                 if date_filter and article.published_date:
                     if article.published_date < date_filter:
                         continue
                 
-                results.append((article, float(hybrid_score)))
+                # Normalize scores so top result gets 100%, others scale proportionally
+                # This makes percentages intuitive: best match = 100%, others relative to it
+                if best_score > 0:
+                    normalized_score = score / best_score
+                    normalized_score = min(1.0, normalized_score)  # Cap at 100%
+                else:
+                    normalized_score = score
+                
+                results.append((article, float(normalized_score)))
             
-            # Sort by hybrid score (primary), then by created_at (newer first), then by published_date
+            # Sort by score (higher is better), then by date
             results.sort(key=lambda x: (
-                -x[1],  # Hybrid score (higher is better)
-                -x[0].created_at.timestamp() if x[0].created_at else 0,  # Newer in DB first
-                -x[0].published_date.timestamp() if x[0].published_date else 0  # Then by published date
+                -x[1],  # Score
+                -x[0].created_at.timestamp() if x[0].created_at else 0,
+                -x[0].published_date.timestamp() if x[0].published_date else 0
             ))
             
-            mode = "hybrid (semantic + keyword)" if bm25_scores is not None else "semantic only"
-            logger.info(f"Search mode: {mode}, returned {len(results[:top_k])} results")
+            logger.info(f"Hybrid search returned {len(results[:top_k])} results")
             
             return results[:top_k]
         
@@ -309,22 +335,14 @@ class SearchService:
             return []
     
     def get_index_stats(self, db: Session) -> Dict:
-        """Get statistics about indexed articles
-        
-        Args:
-            db: SQLAlchemy session
-            
-        Returns:
-            Dictionary with index statistics
-        """
+        """Get statistics about indexed articles"""
         try:
-            # Check if index needs to be reloaded (new articles indexed)
             if self._should_reload_index():
-                logger.info("Detected index update, reloading indexes for stats...")
+                logger.info("Detected index update, reloading index for stats...")
                 if self.load_index():
-                    logger.info("Indexes reloaded successfully")
+                    logger.info("Index reloaded successfully")
             
-            if self.index is None:
+            if self.vectorstore is None:
                 return {
                     "total_articles": 0,
                     "articles_by_source": {},
@@ -334,20 +352,15 @@ class SearchService:
                     "last_scraped": None,
                 }
             
-            # Query all articles
             total_articles = db.query(Article).count()
             articles = db.query(Article).all()
             
-            # Count by source
             articles_by_source = {}
             for article in articles:
                 articles_by_source[article.source] = articles_by_source.get(article.source, 0) + 1
             
-            # Get date range
             oldest = db.query(Article).order_by(Article.published_date.asc()).first()
             newest = db.query(Article).order_by(Article.published_date.desc()).first()
-            
-            # Get the most recent created_at time (when articles were ingested into DB)
             last_ingested = db.query(Article).order_by(Article.created_at.desc()).first()
             last_scraped = db.query(Article).order_by(Article.scraped_at.desc()).first()
             
@@ -358,7 +371,7 @@ class SearchService:
                     "oldest": oldest.published_date.isoformat() + "Z" if oldest and oldest.published_date else None,
                     "newest": newest.published_date.isoformat() + "Z" if newest and newest.published_date else None,
                 },
-                "indexed_articles": len(self.article_ids) if self.article_ids is not None else 0,
+                "indexed_articles": len(self.article_ids_map) if self.article_ids_map else 0,
                 "last_refresh": last_ingested.created_at.isoformat() + "Z" if last_ingested and last_ingested.created_at else None,
                 "last_scraped": last_scraped.scraped_at.isoformat() + "Z" if last_scraped and last_scraped.scraped_at else None,
             }

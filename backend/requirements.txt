@@ -5,19 +5,22 @@ httpx>=0.27.0
 brotli>=1.0.0  # Required for Brotli decompression (used by CoinTelegraph, TheDefiant)
 beautifulsoup4==4.12.2
 sentence-transformers>=2.7.0
-faiss-cpu==1.7.4
 openai>=1.109.1
 pydantic>=2.12.3
 pydantic-settings>=2.11.0
 python-dateutil==2.8.2
 rank-bm25==0.2.2
-numpy<2.0  # Required for faiss-cpu compatibility
+numpy>=1.24.0
 transformers>=4.35.0  # For toxicity detection using unitary/toxic-bert
 torch>=2.0.0  # Required for transformers models
 # LangChain v1 packages (only the ones we use)
 langchain-openai==1.0.1
 langchain-ollama==1.0.0  # For local LLM support (free!)
 langchain-core==1.0.2
-
+langchain-community>=0.3.0  # For BM25 retriever
+langchain-huggingface>=1.0.0  # For HuggingFace embeddings (non-deprecated)
+langchain-qdrant>=1.0.0  # For Qdrant vectorstore with hybrid search
+fastembed>=0.2.0  # For sparse embeddings (BM25) in hybrid search
+qdrant-client>=1.10.0  # Qdrant client library
 # Testing dependencies
 aiohttp==3.9.1

@@ -51,7 +51,7 @@ async def generate_sse_response(
         if recent_only:
             date_filter = datetime.utcnow() - timedelta(days=30)
         
-        # Hybrid search for relevant articles (semantic + keyword)
+        # Semantic search for relevant articles
         search_results = search_service.search(
             question,
             db,
@@ -146,9 +146,9 @@ async def ask_question(
     x_session_id: Optional[str] = Header(None),
     recent_only: bool = Query(True, description="Filter to articles from last 30 days"),
     top_k: int = Query(5, ge=1, le=20, description="Number of articles to retrieve (1-20)"),
-    keyword_boost: float = Query(0.3, ge=0.0, le=1.0, description="Keyword matching weight (0.0-1.0, default 0.3 = 30% keyword, 70% semantic)")
+    keyword_boost: float = Query(0.3, ge=0.0, le=1.0, description="Deprecated: kept for API compatibility, not used in semantic-only search")
 ):
-    """Handle user questions with hybrid search (semantic + keyword) and streaming LLM response
+    """Handle user questions with semantic search and streaming LLM response
     
     Args:
         request: Question request with user question
@@ -200,7 +200,7 @@ async def get_index_stats(db: Session = Depends(get_db)):
 
 @router.post("/rebuild-index")
 async def rebuild_index(db: Session = Depends(get_db)):
-    """Manually rebuild FAISS index (admin only)"""
+    """Manually rebuild Qdrant index (admin only)"""
     try:
         logger.info("Manually rebuilding search index...")
         search_service.build_index(db)

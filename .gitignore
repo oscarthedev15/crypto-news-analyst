@@ -134,7 +134,13 @@ backend/data/
 data/*.db
 
 # ==========================================
-# FAISS & ML Models
+# Qdrant Vector Database
+# ==========================================
+qdrant-storage/
+qdrant_vectorstore/
+
+# ==========================================
+# FAISS & ML Models (legacy)
 # ==========================================
 data/faiss.index
 data/article_ids.pkl
