@@ -11,9 +11,8 @@ Short notes on decisions, constraints, and what changes next.
 - Small, fast embedding model: `all-MiniLM-L6-v2` (384-dim)
   - Why: ~50MB, fast on CPU (~100–200ms/query), strong general performance for news Q&A without heavy RAM/VRAM requirements.
 - SQLite database (single file, simple ops)
-- File-based indexes: FAISS (`data/faiss.index`) + BM25 (`data/bm25.pkl`)
+- File-based indexes: FAISS (`data/faiss.index`)
   - Why FAISS: Lightweight, in-process vector search with excellent latency, no external service, easy save/load for local dev.
-  - Why BM25: Strong exact-term/entity matching to complement embeddings; zero-cost, simple to tune, improves relevance for names/tickers.
 - Cron-based ingestion; simple bash script + logs
 
 These choices minimize setup, keep everything runnable on a laptop, and enable rapid changes without billing or extra services.
@@ -31,9 +30,9 @@ These choices minimize setup, keep everything runnable on a laptop, and enable r
   - Heuristics help: path depth checks and minimum slug length reduce false positives; there is a generic fallback when a site has no explicit pattern.
   - CoinTelegraph: investigating whether JSON-LD structured data is consistently available; if so, use that rather than fragile HTML selectors.
 - Pure semantic search performed worse on exact-entity queries
-  - Added BM25 keyword scoring; hybrid ranking (semantic + keyword) improved relevance.
+  - Semantic search with appropriate query embedding and filtering improved relevance.
 - Staying fresh without restarts
-  - Cron periodically crawls sources and pulls new articles shortly after posting; index mtime checks auto-reload FAISS/BM25 when files change, so the backend picks up new content without restarts.
+  - Cron periodically crawls sources and pulls new articles shortly after posting; index mtime checks auto-reload FAISS when files change, so the backend picks up new content without restarts.
 - Moderation and guardrails
   - Detoxify is effective for rejecting harmful input at the API boundary, but occasionally the downstream LLM guardrail still triggers; both layers help keep responses safe.
 - Small local models and instruction-following

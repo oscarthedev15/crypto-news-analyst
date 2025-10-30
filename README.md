@@ -7,14 +7,14 @@ AI-powered semantic search engine for cryptocurrency news with streaming LLM res
 A local-first RAG (Retrieval-Augmented Generation) system that:
 
 - **Scrapes** crypto news from CoinTelegraph, DL News, and The Defiant
-- **Indexes** articles using hybrid search (semantic + keyword matching)
+- **Indexes** articles using semantic search
 - **Answers** questions with AI-generated responses backed by real sources
 - **Streams** responses in real-time with proper citations
 - **Runs locally** with free LLM (Ollama) or OpenAI
 
 **Key Features:**
 
-- 🔍 Hybrid search (FAISS + BM25) for accurate entity matching
+- 🔍 Semantic search (FAISS) for accurate article retrieval
 - 🤖 Choice of LLM: Ollama (free, local) or OpenAI (cloud)
 - 📰 Auto-refresh with cron jobs (no server restart needed)
 - 💬 Conversational context with session management
@@ -141,7 +141,7 @@ Set up cron job to auto-refresh articles:
 **Features:**
 
 - ✅ Auto-fetches new articles from all sources
-- ✅ Rebuilds search indexes (FAISS + BM25)
+- ✅ Rebuilds search indexes (FAISS)
 - ✅ Server picks up changes **without restart**
 
 Monitor logs:
@@ -161,7 +161,7 @@ tail -f backend/logs/cron.log
 
 ### API Endpoints
 
-- `POST /api/ask` - Hybrid search with streaming LLM response
+- `POST /api/ask` - Semantic search with streaming LLM response
   - Headers: `X-Session-Id` (optional)
   - Parameters: `question`, `recent_only`, `top_k`, `keyword_boost`
 - `DELETE /api/session/{session_id}` - Clear chat session
@@ -214,7 +214,7 @@ SIMILARITY_THRESHOLD=0.3
 
 - **"FAISS index not found"**: Run `python backend/scripts/ingest_news.py`
 - **No articles found**: Increase count: `--max-articles-per-source 50`
-- **Hybrid search not working**: Rebuild: `POST http://localhost:8000/api/rebuild-index`
+- **Search not working**: Rebuild: `POST http://localhost:8000/api/rebuild-index`
 
 **Quality Issues:**
 
@@ -225,7 +225,7 @@ SIMILARITY_THRESHOLD=0.3
 
 ## 🛠️ Tech Stack
 
-**Backend:** FastAPI, SQLAlchemy, FAISS, BM25, sentence-transformers, LangChain, transformers (unitary/toxic-bert), SQLite
+**Backend:** FastAPI, SQLAlchemy, FAISS, sentence-transformers, LangChain, transformers (unitary/toxic-bert), SQLite
 
 **Frontend:** React 18, Vite, Server-Sent Events
 

@@ -10,7 +10,7 @@ High-level overview of the Crypto News Agent's technical design and data flows.
 flowchart LR
     USER[👤 User] --> REACT[⚛️ React]
     REACT --> API[🚀 FastAPI]
-    API --> SEARCH[(🔍 Hybrid<br/>Search)]
+    API --> SEARCH[(🔍 Search)]
     API --> LLM[🤖 LLM]
 
     CRON[⏰ Cron] --> SCRAPER[🕷️ Scraper]
@@ -23,7 +23,7 @@ flowchart LR
 **Two Pipelines:**
 
 1. **Background**: Cron → Scraper → Database → Search Indexes
-2. **Real-time**: User → Query → Hybrid Search → LLM → Streaming Response
+2. **Real-time**: User → Query → Search → LLM → Streaming Response
 
 ---
 
@@ -42,7 +42,7 @@ flowchart TB
     SCRAPER --> CT & TD & DL
     CT & TD & DL --> DB[(💾 SQLite)]
     DB --> EMBED[🧠 Embeddings]
-    EMBED --> FAISS[(FAISS)] & BM25[(BM25)]
+    EMBED --> FAISS[(FAISS)]
 ```
 
 **Components:**
@@ -52,7 +52,6 @@ flowchart TB
 - **Database**: SQLite with article metadata (title, content, URL, dates)
 - **Embeddings**: `all-MiniLM-L6-v2` (384-dim vectors, ~50MB model)
 - **FAISS**: Vector similarity search (L2 distance)
-- **BM25**: Keyword matching index (handles brand names, exact terms)
 
 ---
 
@@ -62,8 +61,8 @@ flowchart TB
 flowchart TB
     USER[👤 Query] --> API[🚀 FastAPI]
     API --> MOD[🛡️ Moderation]
-    MOD --> SEARCH[🔎 Hybrid Search]
-    SEARCH --> FAISS & BM25 & DB
+    MOD --> SEARCH[🔎 Search]
+    SEARCH --> FAISS & DB
     SEARCH --> LLM[🤖 LLM]
     LLM --> OLLAMA[Ollama] & OPENAI[OpenAI]
     LLM -.->|SSE| USER
@@ -72,11 +71,10 @@ flowchart TB
 **Pipeline Steps:**
 
 1. **Moderation**: Transformers pipeline (unitary/toxic-bert) checks for toxic/inappropriate content (threshold: 0.5)
-2. **Hybrid Search**:
+2. **Search**:
    - Generate query embedding (384-dim)
-   - FAISS semantic search (70% weight)
-   - BM25 keyword search (30% weight)
-   - Combine scores, filter by date, return top-K
+   - FAISS semantic search
+   - Filter by date, return top-K
 3. **LLM Context**: Build prompt with retrieved articles + chat history
 4. **Stream Response**: Token-by-token via Server-Sent Events
 
@@ -88,7 +86,7 @@ flowchart TB
 | -------------- | ------------------------------------------ |
 | **Frontend**   | React 18, Vite, Server-Sent Events         |
 | **Backend**    | FastAPI, SQLAlchemy, LangChain             |
-| **Search**     | FAISS (semantic), BM25 (keyword)           |
+| **Search**     | FAISS (semantic)                           |
 | **Embeddings** | sentence-transformers (all-MiniLM-L6-v2)   |
 | **LLM**        | Ollama (local) or OpenAI (cloud)           |
 | **Moderation** | transformers pipeline (unitary/toxic-bert) |
@@ -99,13 +97,6 @@ flowchart TB
 ---
 
 ## Key Features
-
-### Hybrid Search
-
-- **Problem**: Pure semantic search fails on brand names ("pump.fun"), specific entities, exact phrases
-- **Solution**: Combine semantic (meaning) + keyword (exact match)
-- **Weights**: 70% semantic / 30% keyword (configurable via `keyword_boost`)
-- **Result**: Higher relevance for entity-specific queries
 
 ### Dynamic Index Reloading
 
@@ -140,9 +131,7 @@ flowchart TB
 4. Search service:
    - Checks if indexes updated (auto-reload if needed)
    - Generates query embedding
-   - FAISS returns 20 candidates with L2 distances
-   - BM25 scores all articles for "bitcoin"
-   - Combines: `0.7×semantic + 0.3×keyword`
+   - FAISS returns candidates with L2 distances
    - Filters last 30 days, returns top 5
 5. LLM builds context with articles + chat history
 6. Streams tokens via SSE:
