@@ -48,6 +48,7 @@ These choices minimize setup, keep everything runnable on a laptop, and enable r
 - Optional larger embedding model for accuracy (configurable)
 - Basic filters: date range, source; lightweight UI controls
 - Moderation tweaks and per-session rate limits
+- LLM fine-tuning on crypto-specific datasets: Train or adapt the base model (e.g., via LoRA) on curated crypto news articles, whitepapers, and domain terminology to improve understanding of technical concepts (DeFi protocols, tokenomics, blockchain mechanics), entity recognition (project names, tickers, exchanges), and temporal reasoning (market cycles, event impacts). Could leverage accumulated scraped articles as training data or use specialized crypto NLP datasets.
 
 ---
 
