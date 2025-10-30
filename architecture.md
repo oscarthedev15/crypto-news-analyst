@@ -161,3 +161,21 @@ flowchart TB
 ## Architecture Decisions
 
 See [reflection.md](./reflection.md) for detailed discussion of MVP choices, trade-offs, and future improvements.
+
+---
+
+## Development Helper
+
+### `reset_and_ingest.sh`
+
+- Purpose: Quick local reset of the data stack for development.
+- Actions:
+  - Stops Qdrant (`docker compose down`).
+  - Deletes local SQLite DB (`backend/news_articles.db`).
+  - Clears Qdrant storage directory (`qdrant-storage/`).
+  - Starts Qdrant fresh (`docker compose up -d`) and waits for readiness.
+  - Re-runs the ingestion pipeline (`backend/scripts/ingest_news.py`).
+- Logging: Writes to `backend/logs/reset_ingest_<timestamp>.log`.
+- Portability: No hardcoded paths; resolves paths relative to the script location. All paths and settings can be overridden via environment variables:
+  - `PROJECT_ROOT`, `BACKEND_DIR`, `VENV_ACTIVATE`, `SQLITE_DB`, `QDRANT_STORAGE`, `QDRANT_URL`, `COLLECTION_NAME`, `MAX_PER_SOURCE`.
+- Intended use: Local development to quickly rebuild the database and vector indexes when iterating on scraping or search.
