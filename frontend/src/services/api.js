@@ -83,7 +83,7 @@ class CryptoNewsAPI {
     onError,
     options = {}
   ) {
-    const { top_k = 5 } = options;
+    const { top_k = 8 } = options;
 
     try {
       const response = await fetch(`${this.baseURL}/ask?top_k=${top_k}`, {

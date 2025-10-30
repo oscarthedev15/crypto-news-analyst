@@ -252,16 +252,16 @@ See [reflection.md](./reflection.md) for detailed discussion of MVP choices, tra
 
 ## Development Helper
 
-### `reset_and_ingest.sh`
+### `data_reset.sh`
 
-- Purpose: Quick local reset of the data stack for development.
+- Purpose: Quickly stop services and remove all local data.
 - Actions:
   - Stops Qdrant (`docker compose down`).
+  - Stops backend dev server (uvicorn) if running.
   - Deletes local SQLite DB (`backend/news_articles.db`).
   - Clears Qdrant storage directory (`qdrant-storage/`).
-  - Starts Qdrant fresh (`docker compose up -d`) and waits for readiness.
-  - Re-runs the ingestion pipeline (`backend/scripts/ingest_news.py`).
-- Logging: Writes to `backend/logs/reset_ingest_<timestamp>.log`.
-- Portability: No hardcoded paths; resolves paths relative to the script location. All paths and settings can be overridden via environment variables:
-  - `PROJECT_ROOT`, `BACKEND_DIR`, `VENV_ACTIVATE`, `SQLITE_DB`, `QDRANT_STORAGE`, `QDRANT_URL`, `COLLECTION_NAME`, `MAX_PER_SOURCE`.
-- Intended use: Local development to quickly rebuild the database and vector indexes when iterating on scraping or search.
+  - Starts Qdrant fresh and waits for readiness (`docker compose up -d`).
+- Logging: Writes to `backend/logs/data_reset_<timestamp>.log`.
+- Portability: No hardcoded paths; resolves paths relative to the script location. Paths can be overridden via environment variables:
+  - `PROJECT_ROOT`, `BACKEND_DIR`, `SQLITE_DB`, `QDRANT_STORAGE`, `QDRANT_URL`.
+- Intended use: Clean slate for development; ingestion can be run separately when needed.

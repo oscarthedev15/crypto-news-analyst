@@ -56,6 +56,47 @@ DEFAULT_HEADERS = {
 }
 
 
+# Network settings
+DEFAULT_CONNECT_TIMEOUT = 5.0
+DEFAULT_READ_TIMEOUT = 20.0
+HOMEPAGE_READ_TIMEOUT = 30.0  # some sites are slow to send first bytes
+MAX_RETRIES = 3
+BASE_BACKOFF_SECONDS = 0.5
+
+
+async def fetch_with_retries(client: httpx.AsyncClient, url: str, *, homepage: bool = False) -> httpx.Response:
+    """HTTP GET with graceful retries, exponential backoff, and jitter."""
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            timeout = httpx.Timeout(
+                connect=DEFAULT_CONNECT_TIMEOUT,
+                read=(HOMEPAGE_READ_TIMEOUT if homepage else DEFAULT_READ_TIMEOUT),
+                write=DEFAULT_CONNECT_TIMEOUT,
+                pool=None,
+            )
+            return await client.get(url, timeout=timeout)
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+            last_exc = e
+            # Deterministic exponential backoff
+            sleep_s = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
+            logger.warning(f"Transient network error on GET {url} (attempt {attempt}/{MAX_RETRIES}): {e}. Retrying in {sleep_s:.2f}s")
+            await asyncio.sleep(sleep_s)
+        except httpx.HTTPStatusError as e:
+            # Non-2xx; don't retry on 4xx except 429, retry on 5xx
+            status = e.response.status_code
+            if status == 429 or 500 <= status < 600:
+                last_exc = e
+                sleep_s = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                logger.warning(f"HTTP {status} on GET {url} (attempt {attempt}/{MAX_RETRIES}). Retrying in {sleep_s:.2f}s")
+                await asyncio.sleep(sleep_s)
+            else:
+                raise
+    # Exhausted retries
+    assert last_exc is not None
+    raise last_exc
+
+
 def is_approved_source(url: str) -> bool:
     """Check if URL is from an approved source"""
     for domain in APPROVED_SOURCES.keys():
@@ -286,8 +327,8 @@ async def fetch_articles_from_source(
     logger.info(f"Fetching articles from {source_name} ({homepage})")
     
     try:
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True, headers=DEFAULT_HEADERS) as client:
-            response = await client.get(homepage)
+        async with httpx.AsyncClient(follow_redirects=True, headers=DEFAULT_HEADERS) as client:
+            response = await fetch_with_retries(client, homepage, homepage=True)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -335,7 +376,7 @@ async def fetch_articles_from_source(
                 try:
                     await asyncio.sleep(rate_limit)
                     
-                    article_response = await client.get(url)
+                    article_response = await fetch_with_retries(client, url, homepage=False)
                     article_response.raise_for_status()
                     
                     article_soup = BeautifulSoup(article_response.text, 'html.parser')
@@ -366,6 +407,10 @@ async def fetch_articles_from_source(
                         logger.warning(f"403 Forbidden for {url} - site may be blocking scrapers")
                     rejections["http_error"] += 1
                     continue
+                except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+                    logger.info(f"Network timeout/error fetching article {url}: {e}")
+                    rejections["http_error"] += 1
+                    continue
                 except Exception as e:
                     logger.debug(f"Error fetching article {url}: {e}")
                     rejections["other"] += 1
@@ -383,6 +428,8 @@ async def fetch_articles_from_source(
             logger.error(f"403 Forbidden for {source_name} homepage - site is blocking scrapers")
         else:
             logger.error(f"HTTP error fetching {source_name}: {e}")
+    except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+        logger.warning(f"Network timeout/error fetching {source_name} homepage: {e}")
     except Exception as e:
         logger.error(f"Error fetching articles from {source_name}: {e}", exc_info=True)
     

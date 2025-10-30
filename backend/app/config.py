@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     embedding_model: str = "all-mpnet-base-v2"  # Upgraded: Better quality (768-dim vs 384-dim)
     
     # Search
-    top_k_articles: int = 5
+    top_k_articles: int = 8
     similarity_threshold: float = 0.3
     
     # News sources

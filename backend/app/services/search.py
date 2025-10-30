@@ -93,28 +93,19 @@ class SearchService:
         
         logger.info("Building Qdrant vector store with hybrid search (dense + sparse)...")
         
-        # Check if collection exists and has sparse vectors - if not, delete it to recreate
+        # Always recreate collection when rebuilding the index to avoid duplicate points
         if self.qdrant_client:
             try:
                 collections = self.qdrant_client.get_collections().collections
                 collection_exists = any(c.name == COLLECTION_NAME for c in collections)
-                
                 if collection_exists:
-                    collection_info = self.qdrant_client.get_collection(COLLECTION_NAME)
-                    has_sparse_vectors = (
-                        collection_info.config.params.sparse_vectors is not None
-                        and "sparse" in collection_info.config.params.sparse_vectors
+                    logger.info(
+                        f"Collection '{COLLECTION_NAME}' exists. Deleting to ensure a clean rebuild (prevents duplicate points)."
                     )
-                    
-                    if not has_sparse_vectors:
-                        logger.warning(
-                            f"Collection '{COLLECTION_NAME}' exists but lacks sparse vectors. "
-                            f"Deleting collection to recreate with hybrid search support..."
-                        )
-                        self.qdrant_client.delete_collection(COLLECTION_NAME)
-                        logger.info("Collection deleted. Will be recreated with sparse vectors.")
+                    self.qdrant_client.delete_collection(COLLECTION_NAME)
+                    logger.info("Collection deleted. It will be recreated with hybrid search support.")
             except Exception as e:
-                logger.warning(f"Error checking collection for sparse vectors: {e}. Continuing with build...")
+                logger.warning(f"Error checking/deleting existing collection: {e}. Continuing with build...")
         
         vectorstore_kwargs = {
             "documents": documents,
@@ -240,7 +231,7 @@ class SearchService:
         self,
         query: str,
         db: Session,
-        top_k: int = 5,
+        top_k: int = 8,
         date_filter: Optional[datetime] = None
     ) -> List[Tuple[Article, float]]:
         """Semantic search using LangChain Qdrant vectorstore with hybrid search
