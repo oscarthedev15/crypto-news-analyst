@@ -2,9 +2,14 @@ import logging
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 from datetime import datetime
+from uuid import uuid4
 from sqlalchemy.orm import Session
 
-from langchain_community.vectorstores import FAISS
+from langchain_qdrant import (
+    QdrantVectorStore,
+    RetrievalMode,
+    FastEmbedSparse,
+)
 from langchain_core.documents import Document
 
 from app.models import Article
@@ -12,22 +17,54 @@ from app.services.embeddings import get_embedding_service
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path("data")
-VECTORSTORE_DIR = DATA_DIR / "faiss_vectorstore"
+# Use path relative to this file's location
+# This file is at: backend/app/services/search.py
+# Data directory is at: backend/data/
+DATA_DIR = Path(__file__).parent.parent.parent / "data"
+QDRANT_DIR = DATA_DIR / "qdrant_vectorstore"
+COLLECTION_NAME = "crypto_news_articles"
 
 
 class SearchService:
-    """Service for semantic search using LangChain FAISS"""
+    """Service for semantic search using LangChain Qdrant with hybrid search (dense + sparse)"""
     
     def __init__(self):
         self.vectorstore = None
         self.embedding_service = get_embedding_service()
-        self.article_ids_map = {}  # Map from LangChain doc ID to article ID
+        self.sparse_embeddings = None
+        self.article_ids_map = {}
         self._index_load_time = None
+
+        # Initialize sparse embeddings for hybrid search
+        # Hybrid search provides better results by combining semantic (dense) and keyword (sparse) matching
+        try:
+            self.sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
+            logger.info("Initialized FastEmbed sparse embeddings for hybrid search")
+        except Exception as e:
+            logger.error(
+                f"Failed to initialize sparse embeddings: {e}. This will degrade search quality. "
+                f"Please ensure fastembed>=0.2.0 is installed correctly."
+            )
+            # Note: We still set sparse_embeddings to None to allow fallback to dense-only mode
+            # but this should be rare and indicates a configuration issue
     
     def build_index(self, db: Session):
-        """Build FAISS semantic search index using LangChain"""
-        logger.info("Building semantic search index with LangChain FAISS...")
+        """Build Qdrant semantic search index using LangChain with hybrid search
+        
+        REQUIRES: Hybrid search (dense + sparse embeddings) - will fail if sparse embeddings unavailable
+        """
+        logger.info("Building semantic search index with LangChain Qdrant (hybrid search)...")
+        
+        # Ensure sparse embeddings are available - hybrid search is required
+        if not self.sparse_embeddings:
+            error_msg = (
+                "Cannot build index: Sparse embeddings not available. "
+                "Hybrid search is required for index building. "
+                "Please ensure fastembed>=0.2.0 is installed correctly. "
+                "Install with: pip install fastembed>=0.2.0"
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
         
         DATA_DIR.mkdir(exist_ok=True)
         
@@ -60,19 +97,24 @@ class SearchService:
             documents.append(doc)
             self.article_ids_map[doc_id] = article.id
         
-        # Build FAISS vector store with LangChain
-        logger.info("Building FAISS vector store...")
-        self.vectorstore = FAISS.from_documents(
+        # Build Qdrant vector store with hybrid search (required)
+        # Hybrid search combines semantic (dense) and keyword (sparse) matching
+        logger.info("Building Qdrant vector store with hybrid search (dense + sparse)...")
+        self.vectorstore = QdrantVectorStore.from_documents(
             documents,
-            embedding=self.embedding_service.langchain_embeddings
+            embedding=self.embedding_service.langchain_embeddings,
+            sparse_embedding=self.sparse_embeddings,
+            path=str(QDRANT_DIR),
+            collection_name=COLLECTION_NAME,
+            retrieval_mode=RetrievalMode.HYBRID,
+            vector_name="dense",
         )
-        
-        # Save vectorstore to disk
-        self.vectorstore.save_local(str(VECTORSTORE_DIR))
+        logger.info("Built index with hybrid search - combining semantic and keyword matching")
         
         # Save article IDs mapping
         import pickle
-        with open(DATA_DIR / "article_ids_map.pkl", 'wb') as f:
+        ids_map_file = DATA_DIR / "article_ids_map.pkl"
+        with open(ids_map_file, 'wb') as f:
             pickle.dump(self.article_ids_map, f)
         
         logger.info(f"Semantic index built successfully. Indexed {len(articles)} articles.")
@@ -80,9 +122,10 @@ class SearchService:
     def _get_index_modification_time(self) -> Optional[float]:
         """Get the latest modification time of index files"""
         try:
-            if not VECTORSTORE_DIR.exists():
+            if not QDRANT_DIR.exists():
                 return None
-            return VECTORSTORE_DIR.stat().st_mtime
+            # Check modification time of the collection directory
+            return QDRANT_DIR.stat().st_mtime
         except Exception as e:
             logger.error(f"Error checking index modification time: {e}")
             return None
@@ -99,18 +142,51 @@ class SearchService:
         return current_mod_time > self._index_load_time
     
     def load_index(self, force: bool = False) -> bool:
-        """Load FAISS vectorstore from disk"""
+        """Load Qdrant vectorstore from disk
+        
+        Tries to load with hybrid search first (if sparse embeddings available),
+        falls back to dense-only if that fails or sparse embeddings unavailable.
+        """
         try:
-            if not VECTORSTORE_DIR.exists():
-                logger.warning("Vectorstore index not found")
+            if not QDRANT_DIR.exists():
+                logger.warning("Qdrant storage directory not found")
                 return False
-            
-            # Load FAISS vectorstore
-            self.vectorstore = FAISS.load_local(
-                str(VECTORSTORE_DIR),
-                embeddings=self.embedding_service.langchain_embeddings,
-                allow_dangerous_deserialization=True
-            )
+
+            # Try hybrid search first if sparse embeddings are available
+            # This is preferred for better search quality
+            if self.sparse_embeddings:
+                try:
+                    self.vectorstore = QdrantVectorStore.from_existing_collection(
+                        embedding=self.embedding_service.langchain_embeddings,
+                        sparse_embedding=self.sparse_embeddings,
+                        collection_name=COLLECTION_NAME,
+                        path=str(QDRANT_DIR),
+                        vector_name="dense",
+                    )
+                    logger.info("Loaded vectorstore with hybrid search (dense + sparse)")
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to load with hybrid search: {e}. "
+                        f"Trying dense-only mode..."
+                    )
+                    # Fall back to dense-only if hybrid load fails
+                    # (e.g., collection was built without sparse vectors)
+                    self.vectorstore = QdrantVectorStore.from_existing_collection(
+                        embedding=self.embedding_service.langchain_embeddings,
+                        collection_name=COLLECTION_NAME,
+                        path=str(QDRANT_DIR),
+                        vector_name="dense",
+                    )
+                    logger.info("Loaded vectorstore with dense-only search")
+            else:
+                # Dense-only mode (sparse embeddings not available)
+                logger.warning("Loading with dense-only search (sparse embeddings unavailable)")
+                self.vectorstore = QdrantVectorStore.from_existing_collection(
+                    embedding=self.embedding_service.langchain_embeddings,
+                    collection_name=COLLECTION_NAME,
+                    path=str(QDRANT_DIR),
+                    vector_name="dense",
+                )
             
             # Load article IDs mapping
             import pickle
@@ -121,7 +197,7 @@ class SearchService:
             
             self._index_load_time = self._get_index_modification_time()
             num_docs = len(self.article_ids_map)
-            logger.info(f"Loaded FAISS vectorstore with {num_docs} articles")
+            logger.info(f"Loaded Qdrant vectorstore with {num_docs} articles")
             
             return True
         except Exception as e:
@@ -136,7 +212,7 @@ class SearchService:
         date_filter: Optional[datetime] = None,
         keyword_boost: float = 0.3  # Kept for API compatibility, but not used
     ) -> List[Tuple[Article, float]]:
-        """Semantic search using LangChain FAISS vectorstore
+        """Semantic search using LangChain Qdrant vectorstore with hybrid search
         
         Args:
             query: Search query string
@@ -161,7 +237,7 @@ class SearchService:
             return []
         
         try:
-            # Get semantic results with scores
+            # Get semantic results with scores using hybrid search
             semantic_docs_with_scores = self.vectorstore.similarity_search_with_score(
                 query, 
                 k=min(top_k * 2, len(self.article_ids_map))
@@ -170,18 +246,14 @@ class SearchService:
             # Convert to (Article, score) tuples
             results = []
             
-            # Calculate cosine similarity scores (for normalized embeddings)
-            # FAISS returns L2 distance, but for normalized embeddings:
-            # cosine_similarity ≈ 1 - (L2² / 2)
-            # We'll normalize relative to best match for intuitive percentages
+            # Qdrant returns similarity scores (higher is better for cosine similarity)
+            # Score is already normalized between 0 and 1 for cosine similarity
             if semantic_docs_with_scores:
-                best_distance = semantic_docs_with_scores[0][1]
-                # For normalized embeddings, typical L2 distances are small (0-2)
-                # Best match typically has distance ~0.1-0.3, good matches ~0.3-0.6
+                best_score = semantic_docs_with_scores[0][1]
             else:
-                best_distance = 0
+                best_score = 1.0
             
-            for doc, distance in semantic_docs_with_scores:
+            for doc, score in semantic_docs_with_scores:
                 article_id = doc.metadata.get("id")
                 if not article_id:
                     continue
@@ -195,24 +267,15 @@ class SearchService:
                     if article.published_date < date_filter:
                         continue
                 
-                # Convert L2 distance to cosine similarity
-                # Math: For normalized embeddings, ||a-b||² = 2(1 - cos(θ))
-                # So: cosine_similarity = 1 - (distance² / 2)
-                cosine_similarity = max(0.0, min(1.0, 1.0 - (distance ** 2) / 2.0))
-                
-                # Get the best match's cosine similarity for normalization
-                best_cosine_sim = 1.0 - (best_distance ** 2) / 2.0 if best_distance > 0 else 1.0
-                best_cosine_sim = max(0.0, min(1.0, best_cosine_sim))
-                
                 # Normalize scores so top result gets 100%, others scale proportionally
                 # This makes percentages intuitive: best match = 100%, others relative to it
-                if best_cosine_sim > 0:
-                    score = cosine_similarity / best_cosine_sim
-                    score = min(1.0, score)  # Cap at 100%
+                if best_score > 0:
+                    normalized_score = score / best_score
+                    normalized_score = min(1.0, normalized_score)  # Cap at 100%
                 else:
-                    score = cosine_similarity
+                    normalized_score = score
                 
-                results.append((article, float(score)))
+                results.append((article, float(normalized_score)))
             
             # Sort by score (higher is better), then by date
             results.sort(key=lambda x: (
@@ -221,7 +284,7 @@ class SearchService:
                 -x[0].published_date.timestamp() if x[0].published_date else 0
             ))
             
-            logger.info(f"Semantic search returned {len(results[:top_k])} results")
+            logger.info(f"Hybrid search returned {len(results[:top_k])} results")
             
             return results[:top_k]
         

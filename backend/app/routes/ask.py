@@ -200,7 +200,7 @@ async def get_index_stats(db: Session = Depends(get_db)):
 
 @router.post("/rebuild-index")
 async def rebuild_index(db: Session = Depends(get_db)):
-    """Manually rebuild FAISS index (admin only)"""
+    """Manually rebuild Qdrant index (admin only)"""
     try:
         logger.info("Manually rebuilding search index...")
         search_service.build_index(db)
