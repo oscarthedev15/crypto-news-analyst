@@ -1,8 +1,8 @@
 import logging
+import pickle
 from pathlib import Path
 from typing import List, Tuple, Optional, Dict
 from datetime import datetime
-from uuid import uuid4
 from sqlalchemy.orm import Session
 
 from langchain_qdrant import (
@@ -19,9 +19,6 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Use path relative to this file's location
-# This file is at: backend/app/services/search.py
-# Data directory is at: backend/data/
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 COLLECTION_NAME = "crypto_news_articles"
 
@@ -34,7 +31,7 @@ class SearchService:
         self.embedding_service = get_embedding_service()
         self.sparse_embeddings = None
         self.article_ids_map = {}
-        self._index_point_count = None  # Track point count instead of modification time
+        self._index_point_count = None
         self.qdrant_client = None
 
         # Initialize Qdrant client for server connection
@@ -49,7 +46,6 @@ class SearchService:
             raise
 
         # Initialize sparse embeddings for hybrid search
-        # Hybrid search provides better results by combining semantic (dense) and keyword (sparse) matching
         try:
             self.sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
             logger.info("Initialized FastEmbed sparse embeddings for hybrid search")
@@ -58,8 +54,6 @@ class SearchService:
                 f"Failed to initialize sparse embeddings: {e}. This will degrade search quality. "
                 f"Please ensure fastembed>=0.2.0 is installed correctly."
             )
-            # Note: We still set sparse_embeddings to None to allow fallback to dense-only mode
-            # but this should be rare and indicates a configuration issue
     
     def build_index(self, db: Session):
         """Build Qdrant semantic search index using LangChain with hybrid search
@@ -88,17 +82,13 @@ class SearchService:
         
         logger.info(f"Indexing {len(articles)} articles...")
         
-        # Prepare documents for LangChain
         documents = []
         self.article_ids_map = {}
         
         for article in articles:
-            text = f"{article.title} {article.content}"
             doc_id = f"article_{article.id}"
-            
-            # Create LangChain Document with metadata
             doc = Document(
-                page_content=text,
+                page_content=f"{article.title} {article.content}",
                 metadata={
                     "id": article.id,
                     "title": article.title,
@@ -110,9 +100,31 @@ class SearchService:
             documents.append(doc)
             self.article_ids_map[doc_id] = article.id
         
-        # Build Qdrant vector store with hybrid search (required)
-        # Hybrid search combines semantic (dense) and keyword (sparse) matching
         logger.info("Building Qdrant vector store with hybrid search (dense + sparse)...")
+        
+        # Check if collection exists and has sparse vectors - if not, delete it to recreate
+        if self.qdrant_client:
+            try:
+                collections = self.qdrant_client.get_collections().collections
+                collection_exists = any(c.name == COLLECTION_NAME for c in collections)
+                
+                if collection_exists:
+                    collection_info = self.qdrant_client.get_collection(COLLECTION_NAME)
+                    has_sparse_vectors = (
+                        collection_info.config.params.sparse_vectors is not None
+                        and "sparse" in collection_info.config.params.sparse_vectors
+                    )
+                    
+                    if not has_sparse_vectors:
+                        logger.warning(
+                            f"Collection '{COLLECTION_NAME}' exists but lacks sparse vectors. "
+                            f"Deleting collection to recreate with hybrid search support..."
+                        )
+                        self.qdrant_client.delete_collection(COLLECTION_NAME)
+                        logger.info("Collection deleted. Will be recreated with sparse vectors.")
+            except Exception as e:
+                logger.warning(f"Error checking collection for sparse vectors: {e}. Continuing with build...")
+        
         vectorstore_kwargs = {
             "documents": documents,
             "embedding": self.embedding_service.langchain_embeddings,
@@ -121,6 +133,7 @@ class SearchService:
             "collection_name": COLLECTION_NAME,
             "retrieval_mode": RetrievalMode.HYBRID,
             "vector_name": "dense",
+            "sparse_vector_name": "sparse",
         }
         if settings.qdrant_api_key:
             vectorstore_kwargs["api_key"] = settings.qdrant_api_key
@@ -128,7 +141,6 @@ class SearchService:
         logger.info("Built index with hybrid search - combining semantic and keyword matching")
         
         # Save article IDs mapping
-        import pickle
         ids_map_file = DATA_DIR / "article_ids_map.pkl"
         with open(ids_map_file, 'wb') as f:
             pickle.dump(self.article_ids_map, f)
@@ -159,13 +171,32 @@ class SearchService:
         
         current_point_count = self._get_collection_point_count()
         if current_point_count is None:
-            # If we can't get point count, don't reload (safer)
             return False
         
-        # Reload if point count has changed (new articles added)
         return current_point_count != self._index_point_count
     
-    def load_index(self, force: bool = False) -> bool:
+    def _build_load_kwargs(self, include_sparse: bool = False) -> dict:
+        """Build kwargs for loading Qdrant vectorstore"""
+        load_kwargs = {
+            "embedding": self.embedding_service.langchain_embeddings,
+            "collection_name": COLLECTION_NAME,
+            "url": settings.qdrant_url,
+            "vector_name": "dense",
+        }
+        
+        if include_sparse and self.sparse_embeddings:
+            load_kwargs.update({
+                "sparse_embedding": self.sparse_embeddings,
+                "retrieval_mode": RetrievalMode.HYBRID,
+                "sparse_vector_name": "sparse",
+            })
+        
+        if settings.qdrant_api_key:
+            load_kwargs["api_key"] = settings.qdrant_api_key
+        
+        return load_kwargs
+    
+    def load_index(self) -> bool:
         """Load Qdrant vectorstore from server
         
         Tries to load with hybrid search first (if sparse embeddings available),
@@ -185,52 +216,31 @@ class SearchService:
                 return False
 
             # Try hybrid search first if sparse embeddings are available
-            # This is preferred for better search quality
             if self.sparse_embeddings:
                 try:
-                    load_kwargs = {
-                        "embedding": self.embedding_service.langchain_embeddings,
-                        "sparse_embedding": self.sparse_embeddings,
-                        "collection_name": COLLECTION_NAME,
-                        "url": settings.qdrant_url,
-                        "vector_name": "dense",
-                    }
-                    if settings.qdrant_api_key:
-                        load_kwargs["api_key"] = settings.qdrant_api_key
+                    load_kwargs = self._build_load_kwargs(include_sparse=True)
                     self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
                     logger.info("Loaded vectorstore with hybrid search (dense + sparse)")
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to load with hybrid search: {e}. "
-                        f"Trying dense-only mode..."
-                    )
+                    error_msg = str(e)
+                    if "does not contain sparse vectors" in error_msg:
+                        logger.warning(
+                            f"Collection exists but lacks sparse vectors for hybrid search. "
+                            f"To enable hybrid search, rebuild the index: POST /api/rebuild-index"
+                        )
+                    else:
+                        logger.warning(f"Failed to load with hybrid search: {e}. Trying dense-only mode...")
+                    
                     # Fall back to dense-only if hybrid load fails
-                    # (e.g., collection was built without sparse vectors)
-                    load_kwargs = {
-                        "embedding": self.embedding_service.langchain_embeddings,
-                        "collection_name": COLLECTION_NAME,
-                        "url": settings.qdrant_url,
-                        "vector_name": "dense",
-                    }
-                    if settings.qdrant_api_key:
-                        load_kwargs["api_key"] = settings.qdrant_api_key
+                    load_kwargs = self._build_load_kwargs(include_sparse=False)
                     self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
                     logger.info("Loaded vectorstore with dense-only search")
             else:
-                # Dense-only mode (sparse embeddings not available)
                 logger.warning("Loading with dense-only search (sparse embeddings unavailable)")
-                load_kwargs = {
-                    "embedding": self.embedding_service.langchain_embeddings,
-                    "collection_name": COLLECTION_NAME,
-                    "url": settings.qdrant_url,
-                    "vector_name": "dense",
-                }
-                if settings.qdrant_api_key:
-                    load_kwargs["api_key"] = settings.qdrant_api_key
+                load_kwargs = self._build_load_kwargs(include_sparse=False)
                 self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
             
             # Load article IDs mapping
-            import pickle
             ids_map_file = DATA_DIR / "article_ids_map.pkl"
             if ids_map_file.exists():
                 with open(ids_map_file, 'rb') as f:
@@ -283,16 +293,10 @@ class SearchService:
                 k=min(top_k * 2, len(self.article_ids_map))
             )
             
-            # Convert to (Article, score) tuples
             results = []
-            seen_article_ids = set()  # Track seen article IDs to prevent duplicates
+            seen_article_ids = set()
             
-            # Qdrant returns similarity scores (higher is better for cosine similarity)
-            # Score is already normalized between 0 and 1 for cosine similarity
-            if semantic_docs_with_scores:
-                best_score = semantic_docs_with_scores[0][1]
-            else:
-                best_score = 1.0
+            best_score = semantic_docs_with_scores[0][1] if semantic_docs_with_scores else 1.0
             
             duplicates_skipped = 0
             for doc, score in semantic_docs_with_scores:
@@ -314,13 +318,9 @@ class SearchService:
                     if article.published_date < date_filter:
                         continue
                 
-                # Normalize scores so top result gets 100%, others scale proportionally
-                # This makes percentages intuitive: best match = 100%, others relative to it
-                if best_score > 0:
-                    normalized_score = score / best_score
-                    normalized_score = min(1.0, normalized_score)  # Cap at 100%
-                else:
-                    normalized_score = score
+                # Normalize scores: top result = 100%, others scale proportionally
+                normalized_score = (score / best_score) if best_score > 0 else score
+                normalized_score = min(1.0, normalized_score)
                 
                 results.append((article, float(normalized_score)))
                 seen_article_ids.add(article_id)
@@ -328,9 +328,9 @@ class SearchService:
             if duplicates_skipped > 0:
                 logger.warning(f"Skipped {duplicates_skipped} duplicate articles in search results")
             
-            # Sort by score (higher is better), then by date
+            # Sort by score (descending), then by date (descending)
             results.sort(key=lambda x: (
-                -x[1],  # Score
+                -x[1],
                 -x[0].created_at.timestamp() if x[0].created_at else 0,
                 -x[0].published_date.timestamp() if x[0].published_date else 0
             ))
