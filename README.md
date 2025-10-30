@@ -25,6 +25,7 @@ A local-first RAG (Retrieval-Augmented Generation) system that:
 
 - [Architecture](./architecture.md) - System design and data flows
 - [Development Notes](./reflection.md) - MVP decisions, obstacles, and future improvements
+- [Testing Guide](./backend/performance-test/README.md) - Performance and security test suite
 
 ---
 
@@ -120,6 +121,27 @@ npm run dev
 ```
 
 Access at `http://localhost:5173`
+
+---
+
+## 🧪 Testing
+
+Run the comprehensive performance and security test suite:
+
+```bash
+cd backend
+python performance-test/test_crypto_news_agent.py
+```
+
+**Tests include:**
+
+- ✅ Concurrent request handling (10 simultaneous requests)
+- ✅ Error handling (invalid inputs, missing fields, edge cases)
+- ✅ Content moderation (threatening/inappropriate content detection)
+
+Results are saved to `backend/performance-test/results/test_results.json`.
+
+See [Testing Guide](./backend/performance-test/README.md) for detailed documentation.
 
 ---
 
