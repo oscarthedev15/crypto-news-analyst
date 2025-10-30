@@ -18,21 +18,42 @@ const ChatMessage = ({ message }) => {
   };
 
   // Extract cited article numbers from the response content
+  // Supports both [Article N] and Article N formats
   const getCitedArticleNumbers = (text) => {
     if (!text) return new Set();
 
-    // Match patterns like [Article 1], [Article 2], etc.
-    const matches = text.match(/\[Article\s+(\d+)\]/gi);
-    if (!matches) return new Set();
+    const citedNumbers = new Set();
 
-    return new Set(
-      matches
-        .map((match) => {
-          const num = match.match(/\d+/);
-          return num ? parseInt(num[0]) : null;
-        })
-        .filter((num) => num !== null)
-    );
+    // Match [Article N] format (preferred format)
+    const bracketMatches = text.match(/\[Article\s+(\d+)\]/gi);
+    if (bracketMatches) {
+      bracketMatches.forEach((match) => {
+        const num = match.match(/\d+/);
+        if (num) citedNumbers.add(parseInt(num[0]));
+      });
+    }
+
+    // Match "Article N" format (without brackets) - look for various citation patterns
+    // Patterns like:
+    // - "According to Article 1"
+    // - "Article 1 from CoinTelegraph"
+    // - "from Article 1"
+    const articlePatterns = [
+      /(?:According to|from|using|referring to|based on|per)\s+Article\s+(\d+)/gi,
+      /Article\s+(\d+)\s+(?:from|according to|in|per)/gi,
+    ];
+
+    articlePatterns.forEach((pattern) => {
+      const matches = text.matchAll(pattern);
+      for (const match of matches) {
+        const num = match[1];
+        if (num) {
+          citedNumbers.add(parseInt(num));
+        }
+      }
+    });
+
+    return citedNumbers;
   };
 
   // Check if response indicates no information available
@@ -46,30 +67,26 @@ const ChatMessage = ({ message }) => {
       "couldn't find relevant articles",
       "no information available",
       "i don't have any information",
+      "i don't have recent articles about",
+      "couldn't find relevant articles in our database",
     ];
 
-    const hasNoInfoPattern = noInfoPatterns.some((pattern) =>
-      contentLower.includes(pattern)
-    );
-
-    // Also check if no citations are present
-    const citedNumbers = getCitedArticleNumbers(content);
-    const hasNoCitations = citedNumbers.size === 0;
-
-    // Hide sources if it's a no-information response AND no citations
-    return hasNoInfoPattern && hasNoCitations;
+    return noInfoPatterns.some((pattern) => contentLower.includes(pattern));
   };
 
-  // Filter sources to only show those that are actually cited
-  const getUsedSources = () => {
+  // Get sources that are actually cited in the response
+  const getCitedSources = () => {
     // Don't show sources if response indicates no information
     if (isNoInfoResponse()) return [];
 
     if (!sources || sources.length === 0 || !content) return [];
 
     const citedNumbers = getCitedArticleNumbers(content);
-    if (citedNumbers.size === 0) return []; // Don't show any sources if none are cited
 
+    // If no citations found, don't show sources
+    if (citedNumbers.size === 0) return [];
+
+    // Return only sources that are cited
     return sources
       .map((source, index) => ({ source, originalIndex: index + 1 }))
       .filter(({ originalIndex }) => citedNumbers.has(originalIndex))
@@ -94,16 +111,16 @@ const ChatMessage = ({ message }) => {
           </div>
 
           {(() => {
-            const usedSources = getUsedSources();
+            const citedSources = getCitedSources();
             return (
-              usedSources.length > 0 &&
+              citedSources.length > 0 &&
               !isStreaming && (
                 <div className="message-sources">
                   <div className="sources-label">
-                    📚 Sources ({usedSources.length})
+                    📚 Sources ({citedSources.length})
                   </div>
                   <div className="sources-list-compact">
-                    {usedSources.map(({ source, originalIndex }) => (
+                    {citedSources.map(({ source, originalIndex }) => (
                       <SourceCard
                         key={source.id}
                         article={source}

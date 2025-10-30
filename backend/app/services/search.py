@@ -287,6 +287,7 @@ class SearchService:
             
             # Convert to (Article, score) tuples
             results = []
+            seen_article_ids = set()  # Track seen article IDs to prevent duplicates
             
             # Qdrant returns similarity scores (higher is better for cosine similarity)
             # Score is already normalized between 0 and 1 for cosine similarity
@@ -295,9 +296,15 @@ class SearchService:
             else:
                 best_score = 1.0
             
+            duplicates_skipped = 0
             for doc, score in semantic_docs_with_scores:
                 article_id = doc.metadata.get("id")
                 if not article_id:
+                    continue
+                
+                # Skip if we've already seen this article ID
+                if article_id in seen_article_ids:
+                    duplicates_skipped += 1
                     continue
                 
                 article = db.query(Article).filter(Article.id == article_id).first()
@@ -318,6 +325,10 @@ class SearchService:
                     normalized_score = score
                 
                 results.append((article, float(normalized_score)))
+                seen_article_ids.add(article_id)
+            
+            if duplicates_skipped > 0:
+                logger.warning(f"Skipped {duplicates_skipped} duplicate articles in search results")
             
             # Sort by score (higher is better), then by date
             results.sort(key=lambda x: (

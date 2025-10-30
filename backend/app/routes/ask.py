@@ -1,11 +1,11 @@
 import logging
 import json
-import re
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import AsyncGenerator, Optional
+from langchain_core.messages import HumanMessage, AIMessage
 from app.database import get_db
 from app.schemas import QuestionRequest, IndexStats
 from app.services.moderation import get_moderation_service
@@ -60,8 +60,22 @@ async def generate_sse_response(
             keyword_boost=keyword_boost
         )
         
-        # Extract articles and scores
-        articles = [article for article, _ in search_results]
+        # Extract articles and scores, deduplicating by article ID
+        seen_ids = set()
+        unique_articles = []
+        articles_with_scores = {}
+        
+        for article, score in search_results:
+            if article.id not in seen_ids:
+                unique_articles.append(article)
+                articles_with_scores[article.id] = score
+                seen_ids.add(article.id)
+        
+        articles = unique_articles
+        
+        # Log if duplicates were found
+        if len(search_results) > len(articles):
+            logger.warning(f"Found {len(search_results) - len(articles)} duplicate articles in search results (filtered out)")
         
         # Send article metadata first
         articles_data = [
@@ -71,7 +85,7 @@ async def generate_sse_response(
                 "source": article.source,
                 "url": article.url,
                 "published_date": article.published_date.isoformat() + "Z" if article.published_date else None,
-                "similarity_score": next((score for art, score in search_results if art.id == article.id), 0.0)
+                "similarity_score": articles_with_scores.get(article.id, 0.0)
             }
             for article in articles
         ]
@@ -84,7 +98,13 @@ async def generate_sse_response(
         chat_history = None
         if session_id:
             chat_history = session_manager.get_messages(session_id)
-            logger.info(f"Session {session_id}: Retrieved {len(chat_history)} messages from history")
+            user_msgs = len([m for m in chat_history if isinstance(m, HumanMessage)])
+            assistant_msgs = len([m for m in chat_history if isinstance(m, AIMessage)])
+            logger.info(f"Session {session_id}: Retrieved {len(chat_history)} messages from history ({user_msgs} user + {assistant_msgs} assistant)")
+            if chat_history:
+                logger.debug(f"Chat history contains {len([m for m in chat_history if hasattr(m, 'content')])} messages with content")
+        else:
+            logger.debug("No session_id provided, no chat history will be used")
         
         # Generate and stream LLM response
         chunk_count = 0
@@ -98,32 +118,6 @@ async def generate_sse_response(
                 yield event
         
         logger.info(f"Streamed {chunk_count} chunks")
-        
-        # Check if response uses article citations
-        # Only hide sources if there are no citations AND the response explicitly says it doesn't have information from articles
-        has_citations = bool(re.search(r'\[Article\s+\d+\]', full_response, re.IGNORECASE))
-        response_lower = full_response.lower().strip()
-        
-        # Only hide sources if:
-        # 1. No citations found AND
-        # 2. Response explicitly mentions not having information from articles/recent news
-        # (but NOT for casual greetings or general responses)
-        explicit_no_info_patterns = [
-            "i don't have information about that in the recent news articles",
-            "i don't have recent articles about",
-            "couldn't find relevant articles in our database"
-        ]
-        
-        has_explicit_no_info = any(
-            pattern in response_lower 
-            for pattern in explicit_no_info_patterns
-        )
-        
-        if has_explicit_no_info and not has_citations:
-            # Send flag to hide sources only when explicitly saying no article info
-            hide_sources_event = f"data: {json.dumps({'hideSources': True})}\n\n"
-            logger.info("Detected explicit no-article-info response, hiding sources")
-            yield hide_sources_event
         
         # Save conversation to session history
         if session_id and full_response:

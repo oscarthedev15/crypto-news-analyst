@@ -183,30 +183,40 @@ RESPONSE GUIDELINES:
    - Do NOT say "I don't have information" for greetings, small talk, or general questions
    - Be friendly and helpful
 
-2. FOR CRYPTO NEWS QUESTIONS:
-   - When articles are provided and relevant: Use ONLY information from the articles and cite sources
-   - When articles are provided but NOT relevant: Answer naturally using your general knowledge, but mention "Based on general knowledge" or "I don't have recent articles about this specific topic"
-   - When NO articles are provided: Answer naturally using your general knowledge
+2. USING CHAT HISTORY:
+   - IMPORTANT: You have access to the previous messages in this conversation
+   - When the user asks about something mentioned earlier (e.g., "that meeting", "that article", "what you said"), use information from the chat history
+   - If the current articles don't contain the answer BUT the chat history does, use the information from chat history
+   - You can reference information from previous messages without citations when it's from this conversation
+   - Example: If you previously mentioned "Trump and Xi met in South Korea", and the user asks "who is involved in that meeting?", answer "Trump and Xi" based on the chat history
 
-3. CITATION FORMAT (when using articles):
+3. FOR CRYPTO NEWS QUESTIONS:
+   - When articles are provided and relevant: Use information from the articles and cite sources
+   - When articles are provided but NOT relevant: First check if chat history has the answer, then use general knowledge if needed
+   - When NO articles are provided: Check chat history first, then use general knowledge
+   - Prioritize chat history over general knowledge when answering follow-up questions
+
+4. CITATION FORMAT (when using articles):
    - Use this format: "According to [Article N]..."
    - Include source and date: "According to [Article 1] from CoinTelegraph (Jan 20, 2025)"
    - Example: "According to [Article 2] from TheDefiant (Oct 28, 2025), Bitcoin reached $70,000."
    - You MUST cite every fact that comes from the provided articles
+   - When using information from chat history, you don't need article citations (it's from the conversation)
 
-4. RESPONSE STRUCTURE:
+5. RESPONSE STRUCTURE:
    - Start with a direct, natural answer
    - Provide supporting details with citations when using articles
    - Be concise but conversational
    - DO NOT include a "Sources:" section - sources are displayed separately
 
-5. WHAT TO AVOID:
+6. WHAT TO AVOID:
+   - DON'T say "I don't have information" when the answer is in the chat history
    - DON'T say "I don't have information" for casual conversation or general questions
-   - DON'T make up specific facts that aren't in articles (if articles are provided)
+   - DON'T make up specific facts that aren't in articles or chat history
    - DON'T forget to cite sources when using information from articles
    - DO respond naturally and helpfully even when articles don't directly help
 
-Remember: Be helpful, conversational, and natural. Use articles when they're relevant, but don't be robotic about it."""
+Remember: Be helpful, conversational, and natural. Use articles when they're relevant, and use chat history when answering follow-up questions or references to previous messages."""
     
     async def generate_streaming_response(
         self,
@@ -240,7 +250,12 @@ Remember: Be helpful, conversational, and natural. Use articles when they're rel
             # Add chat history if provided
             if chat_history:
                 messages.extend(chat_history)
-                logger.debug(f"Added {len(chat_history)} messages from chat history")
+                logger.info(f"Added {len(chat_history)} messages from chat history (total messages: {len(messages)})")
+                # Log a sample of the history for debugging
+                if len(chat_history) > 0:
+                    logger.debug(f"Last assistant message in history: {chat_history[-1].content[:200] if isinstance(chat_history[-1], AIMessage) else 'N/A'}")
+            else:
+                logger.debug("No chat history provided")
             
             # Add current context and question
             user_message = f"{context}\n\nUser Question: {question}"
