@@ -136,8 +136,6 @@ class CryptoNewsAgentTester:
             # Invalid query parameters
             {"endpoint": "/api/ask", "data": {"question": "What is Bitcoin?"}, 
              "params": {"top_k": -1}, "expected_status": 422},
-            {"endpoint": "/api/ask", "data": {"question": "What is Bitcoin?"}, 
-             "params": {"keyword_boost": 1.5}, "expected_status": 422},
             
             # Non-existent endpoints
             {"endpoint": "/api/nonexistent", "data": None, "expected_status": 404},

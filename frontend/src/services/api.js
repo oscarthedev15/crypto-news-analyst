@@ -73,7 +73,7 @@ class CryptoNewsAPI {
    * @param {function} onChunk - Callback for each text chunk
    * @param {function} onComplete - Callback when streaming completes
    * @param {function} onError - Callback on error
-   * @param {object} options - Additional options (recent_only, top_k)
+   * @param {object} options - Additional options (top_k)
    */
   async askQuestion(
     question,
@@ -83,20 +83,17 @@ class CryptoNewsAPI {
     onError,
     options = {}
   ) {
-    const { recent_only = true, top_k = 5 } = options;
+    const { top_k = 5 } = options;
 
     try {
-      const response = await fetch(
-        `${this.baseURL}/ask?recent_only=${recent_only}&top_k=${top_k}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Session-Id": this.sessionId,
-          },
-          body: JSON.stringify({ question }),
-        }
-      );
+      const response = await fetch(`${this.baseURL}/ask?top_k=${top_k}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": this.sessionId,
+        },
+        body: JSON.stringify({ question }),
+      });
 
       if (!response.ok) {
         let errorMessage = "Failed to process question";

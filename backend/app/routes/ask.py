@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import AsyncGenerator, Optional
 from langchain_core.messages import HumanMessage, AIMessage
 from app.database import get_db
@@ -28,9 +28,7 @@ async def generate_sse_response(
     question: str,
     db: Session,
     session_id: Optional[str] = None,
-    recent_only: bool = True,
-    top_k: int = 5,
-    keyword_boost: float = 0.3
+    top_k: int = 5
 ) -> AsyncGenerator[str, None]:
     """Generate SSE formatted response with streaming LLM chunks
     
@@ -38,26 +36,17 @@ async def generate_sse_response(
         question: User's question
         db: Database session
         session_id: Optional session ID for chat history
-        recent_only: Filter to recent articles (last 30 days)
         top_k: Number of articles to retrieve
-        keyword_boost: Weight for keyword matching (0.0-1.0, default 0.3)
         
     Yields:
         SSE formatted strings
     """
     try:
-        # Calculate date filter
-        date_filter = None
-        if recent_only:
-            date_filter = datetime.utcnow() - timedelta(days=30)
-        
         # Semantic search for relevant articles
         search_results = search_service.search(
             question,
             db,
-            top_k=top_k,
-            date_filter=date_filter,
-            keyword_boost=keyword_boost
+            top_k=top_k
         )
         
         # Extract articles and scores, deduplicating by article ID
@@ -138,9 +127,7 @@ async def ask_question(
     request: QuestionRequest,
     db: Session = Depends(get_db),
     x_session_id: Optional[str] = Header(None),
-    recent_only: bool = Query(True, description="Filter to articles from last 30 days"),
-    top_k: int = Query(5, ge=1, le=20, description="Number of articles to retrieve (1-20)"),
-    keyword_boost: float = Query(0.3, ge=0.0, le=1.0, description="Deprecated: kept for API compatibility, not used in semantic-only search")
+    top_k: int = Query(5, ge=1, le=20, description="Number of articles to retrieve (1-20)")
 ):
     """Handle user questions with semantic search and streaming LLM response
     
@@ -148,9 +135,7 @@ async def ask_question(
         request: Question request with user question
         db: Database session
         x_session_id: Optional session ID from header for chat history
-        recent_only: Filter to recent articles (default: True, last 30 days)
         top_k: Number of articles to retrieve (default: 5)
-        keyword_boost: Weight for keyword matching (0.0-1.0, default: 0.3)
         
     Returns:
         StreamingResponse with SSE formatted chunks
@@ -164,7 +149,7 @@ async def ask_question(
     
     # Return streaming response
     return StreamingResponse(
-        generate_sse_response(request.question, db, x_session_id, recent_only, top_k, keyword_boost),
+        generate_sse_response(request.question, db, x_session_id, top_k),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

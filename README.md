@@ -163,7 +163,7 @@ tail -f backend/logs/cron.log
 
 - `POST /api/ask` - Semantic search with streaming LLM response
   - Headers: `X-Session-Id` (optional)
-  - Parameters: `question`, `recent_only`, `top_k`, `keyword_boost`
+  - Parameters: `question`, `top_k`
 - `DELETE /api/session/{session_id}` - Clear chat session
 - `GET /api/index-stats` - Database statistics
 - `POST /api/rebuild-index` - Manual index rebuild

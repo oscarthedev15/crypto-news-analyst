@@ -251,8 +251,7 @@ class SearchService:
         query: str,
         db: Session,
         top_k: int = 5,
-        date_filter: Optional[datetime] = None,
-        keyword_boost: float = 0.3  # Kept for API compatibility, but not used
+        date_filter: Optional[datetime] = None
     ) -> List[Tuple[Article, float]]:
         """Semantic search using LangChain Qdrant vectorstore with hybrid search
         
@@ -261,7 +260,6 @@ class SearchService:
             db: SQLAlchemy session
             top_k: Number of results to return
             date_filter: Only return articles after this date
-            keyword_boost: Deprecated parameter (kept for API compatibility)
             
         Returns:
             List of (Article, score) tuples
