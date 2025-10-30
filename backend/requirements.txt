@@ -12,7 +12,8 @@ pydantic-settings>=2.11.0
 python-dateutil==2.8.2
 rank-bm25==0.2.2
 numpy<2.0  # Required for faiss-cpu compatibility
-detoxify>=0.3.0  # Toxicity detection for content moderation
+transformers>=4.35.0  # For toxicity detection using unitary/toxic-bert
+torch>=2.0.0  # Required for transformers models
 # LangChain v1 packages (only the ones we use)
 langchain-openai==1.0.1
 langchain-ollama==1.0.0  # For local LLM support (free!)

@@ -1,16 +1,16 @@
 import logging
 import re
-from typing import Tuple, Optional, Any, Dict, List
-from detoxify import Detoxify
+from typing import Tuple, Optional, Any, List
+from transformers import pipeline
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
 class ModerationService:
-    """Service for moderating user input using Detoxify and optionally OpenAI.
+    """Service for moderating user input using transformers pipeline (unitary/toxic-bert) and optionally OpenAI.
     
-    Uses Detoxify by default (always active).
+    Uses unitary/toxic-bert by default (always active).
     If OpenAI API key is configured, also uses OpenAI moderation for additional coverage.
     Blocks content if either service flags it.
     """
@@ -18,8 +18,8 @@ class ModerationService:
     # Threshold for flagging content (0.0 to 1.0)
     # LOWER = MORE STRICT (blocks more content)
     # HIGHER = MORE LENIENT (blocks less content)
-    # 0.3 = stricter moderation, 0.5 = moderate, 0.7 = lenient
-    TOXICITY_THRESHOLD: float = 0.3
+    # 0.5 = moderate threshold (requires 50%+ confidence for toxicity)
+    TOXICITY_THRESHOLD: float = 0.5
 
     # Validation constraints
     MIN_QUESTION_LENGTH: int = 5
@@ -27,24 +27,18 @@ class ModerationService:
     REPEATED_CHAR_LIMIT: int = 10  # 10 identical chars in a row
     SPECIAL_CHAR_RATIO_LIMIT: float = 0.5  # >50% non-alnum ASCII characters
     
-    # Map Detoxify categories to user-friendly reason names
-    CATEGORY_NAMES = {
-        'toxicity': 'inappropriate content',
-        'severe_toxicity': 'severely inappropriate content',
-        'obscene': 'obscene content',
-        'threat': 'threatening language',
-        'insult': 'insulting language',
-        'identity_attack': 'identity-based attack'
-    }
-    
     def __init__(self):
-        """Initialize the moderation service with Detoxify and optionally OpenAI."""
-        # Always initialize Detoxify
+        """Initialize the moderation service with transformers pipeline and optionally OpenAI."""
+        # Initialize transformers pipeline with toxic-bert model
         try:
-            self.detoxify_model: Detoxify = Detoxify('original')
-            logger.info("✅ Moderation: Detoxify model loaded successfully")
+            logger.info("Loading toxicity detection model (unitary/toxic-bert)...")
+            self.classifier = pipeline(
+                "text-classification",
+                model="unitary/toxic-bert"
+            )
+            logger.info("✅ Moderation: transformers pipeline (unitary/toxic-bert) loaded successfully")
         except Exception as e:
-            logger.error(f"❌ Moderation: Failed to initialize Detoxify: {e}")
+            logger.error(f"❌ Moderation: Failed to initialize transformers pipeline: {e}")
             raise RuntimeError(f"Failed to initialize moderation service: {e}")
         
         # Optionally initialize OpenAI moderation if API key is available
@@ -59,9 +53,9 @@ class ModerationService:
                 logger.info("✅ Moderation: OpenAI Moderation API enabled (dual-layer protection)")
             except Exception as e:
                 logger.warning(f"⚠️ Moderation: Could not initialize OpenAI client: {e}")
-                logger.info("✅ Moderation: Using Detoxify only")
+                logger.info("✅ Moderation: Using transformers pipeline only")
         else:
-            logger.info("✅ Moderation: Using Detoxify only (OpenAI API key not configured)")
+            logger.info("✅ Moderation: Using transformers pipeline only (OpenAI API key not configured)")
     
     def is_safe(self, text: str) -> Tuple[bool, str]:
         """Check if text is safe for processing.
@@ -90,8 +84,8 @@ class ModerationService:
         # Collect flags from all moderation services
         all_flagged_reasons: List[str] = []
 
-        # 1) Detoxify
-        all_flagged_reasons.extend(self._run_detoxify_check(text))
+        # 1) Transformers pipeline (toxic-bert)
+        all_flagged_reasons.extend(self._run_toxicity_check(text))
 
         # 2) OpenAI (if configured)
         if self.use_openai and self.openai_client:
@@ -143,16 +137,35 @@ class ModerationService:
         
         return False
 
-    def _run_detoxify_check(self, text: str) -> List[str]:
-        """Run Detoxify check and return list of reason labels that exceed threshold."""
+    def _run_toxicity_check(self, text: str) -> List[str]:
+        """Run toxicity check using transformers pipeline and return list of flagged reasons."""
         reasons: List[str] = []
         try:
-            results: Dict[str, float] = self.detoxify_model.predict(text)
-            for category, score in results.items():
-                if score > self.TOXICITY_THRESHOLD:
-                    reasons.append(self.CATEGORY_NAMES.get(category, category))
+            result = self.classifier(text)
+            
+            # Result format: [{"label": "toxic", "score": 0.95}] or list of dicts
+            if isinstance(result, list):
+                for item in result:
+                    label = item.get("label", "").lower()
+                    score = item.get("score", 0.0)
+                    
+                    # Check if toxic and exceeds threshold
+                    if "toxic" in label and score > self.TOXICITY_THRESHOLD:
+                        reasons.append("toxic content")
+                    elif score > self.TOXICITY_THRESHOLD:
+                        # Other labels that exceed threshold
+                        reasons.append(f"inappropriate content ({label})")
+            else:
+                # Single result format
+                label = result.get("label", "").lower()
+                score = result.get("score", 0.0)
+                if "toxic" in label and score > self.TOXICITY_THRESHOLD:
+                    reasons.append("toxic content")
+                elif score > self.TOXICITY_THRESHOLD:
+                    reasons.append(f"inappropriate content ({label})")
+                    
         except Exception as e:
-            logger.error(f"Error during Detoxify moderation check: {e}")
+            logger.error(f"Error during toxicity check: {e}", exc_info=True)
         return reasons
 
     def _run_openai_check(self, text: str) -> List[str]:

@@ -18,7 +18,7 @@ A local-first RAG (Retrieval-Augmented Generation) system that:
 - 🤖 Choice of LLM: Ollama (free, local) or OpenAI (cloud)
 - 📰 Auto-refresh with cron jobs (no server restart needed)
 - 💬 Conversational context with session management
-- 🛡️ Content moderation with Detoxify
+- 🛡️ Content moderation with transformers pipeline (unitary/toxic-bert)
 - ⚡ Streaming responses via Server-Sent Events
 
 **📖 Documentation**
@@ -225,7 +225,7 @@ SIMILARITY_THRESHOLD=0.3
 
 ## 🛠️ Tech Stack
 
-**Backend:** FastAPI, SQLAlchemy, FAISS, BM25, sentence-transformers, LangChain, Detoxify, SQLite
+**Backend:** FastAPI, SQLAlchemy, FAISS, BM25, sentence-transformers, LangChain, transformers (unitary/toxic-bert), SQLite
 
 **Frontend:** React 18, Vite, Server-Sent Events
 

@@ -71,7 +71,7 @@ flowchart TB
 
 **Pipeline Steps:**
 
-1. **Moderation**: Detoxify checks for toxic/inappropriate content (threshold: 0.7)
+1. **Moderation**: Transformers pipeline (unitary/toxic-bert) checks for toxic/inappropriate content (threshold: 0.5)
 2. **Hybrid Search**:
    - Generate query embedding (384-dim)
    - FAISS semantic search (70% weight)
@@ -84,17 +84,17 @@ flowchart TB
 
 ## Tech Stack
 
-| Layer          | Technology                               |
-| -------------- | ---------------------------------------- |
-| **Frontend**   | React 18, Vite, Server-Sent Events       |
-| **Backend**    | FastAPI, SQLAlchemy, LangChain           |
-| **Search**     | FAISS (semantic), BM25 (keyword)         |
-| **Embeddings** | sentence-transformers (all-MiniLM-L6-v2) |
-| **LLM**        | Ollama (local) or OpenAI (cloud)         |
-| **Moderation** | Detoxify (transformers-based)            |
-| **Scraping**   | httpx, BeautifulSoup                     |
-| **Database**   | SQLite                                   |
-| **Scheduling** | Cron                                     |
+| Layer          | Technology                                 |
+| -------------- | ------------------------------------------ |
+| **Frontend**   | React 18, Vite, Server-Sent Events         |
+| **Backend**    | FastAPI, SQLAlchemy, LangChain             |
+| **Search**     | FAISS (semantic), BM25 (keyword)           |
+| **Embeddings** | sentence-transformers (all-MiniLM-L6-v2)   |
+| **LLM**        | Ollama (local) or OpenAI (cloud)           |
+| **Moderation** | transformers pipeline (unitary/toxic-bert) |
+| **Scraping**   | httpx, BeautifulSoup                       |
+| **Database**   | SQLite                                     |
+| **Scheduling** | Cron                                       |
 
 ---
 
