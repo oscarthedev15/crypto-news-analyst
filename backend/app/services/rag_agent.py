@@ -111,7 +111,9 @@ CRITICAL PRIORITY: ARTICLES FIRST, GENERAL KNOWLEDGE LAST
    - When multiple articles are provided, you MUST synthesize information from MULTIPLE sources
    - IDEALLY use at least 2-3 different articles/sources in your response when available
    - Extract specific facts, numbers, dates, and details from articles
-   - Cite EVERY fact from articles using format: "[Article N] from [Source] ([Date])"
+   - Cite EVERY fact from articles using format: "[Article N] from [Source] (Date: <DATE_STRING>)"
+   - Use the EXACT date string provided with each article (e.g., "Oct 29, 2025").
+   - Never write placeholders like "[Date]"; if no date is available, use "Unknown".
    - Quote specific details: prices, amounts, company names, dates, events
    - If multiple articles cover the topic, actively reference information from multiple articles
    - Compare and contrast different perspectives or details from different sources when relevant
@@ -213,7 +215,8 @@ Here are relevant crypto news articles retrieved from the database (top-k retrie
 INSTRUCTIONS:
 - Base your entire response on these articles
 - Start with specific facts, numbers, and details from the articles{multi_source_instruction}
-- Cite EVERY fact using format: "[Article N] from [Source] ([Date])"
+- Cite EVERY fact using format: "[Article N] from [Source] (Date: <DATE_STRING>)"
+- Use the EXACT date string shown above for each article (e.g., "Oct 29, 2025"). Never write placeholders like "[Date]".
 - Only add minimal general context (1-2 sentences max) if absolutely needed for basic understanding
 - DO NOT lead with general knowledge - lead with article information
 - Extract and highlight specific details: prices, amounts, dates, events, company names from the articles
