@@ -1,18 +1,18 @@
 import logging
 import httpx
-from typing import List, AsyncGenerator, Optional
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, BaseMessage
-from app.models import Article
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 class LLMService:
-    """Service for generating LLM responses with source citations and conversation history
+    """Service for managing LLM provider initialization and configuration
     
     Supports multiple LLM providers:
     - Ollama (local, free) - default if running
     - OpenAI (cloud, requires API key) - fallback option
+    
+    Note: The RAG agent handles actual response generation. This service only manages
+    LLM initialization and provides access to the langchain_llm instance.
     """
     
     def __init__(self):
@@ -134,152 +134,6 @@ class LLMService:
                 "cost": "paid"
             }
         return {"provider": "unknown"}
-    
-    def _build_context_message(self, articles: List[Article]) -> str:
-        """Build context message with article information
-        
-        Args:
-            articles: List of relevant articles
-            
-        Returns:
-            Formatted context string
-        """
-        if not articles:
-            return "No relevant articles found in the database."
-        
-        context_lines = ["Here are the relevant crypto news articles you must use to answer:\n"]
-        
-        # For Ollama, use more concise context to avoid overwhelming smaller models
-        # For OpenAI, we can use more content
-        max_content_length = 400 if self.provider == "ollama" else 500
-        
-        for i, article in enumerate(articles, 1):
-            date_str = article.published_date.strftime("%b %d, %Y") if article.published_date else "Unknown"
-            context_lines.append(f"=== [Article {i}] ===")
-            context_lines.append(f"Title: {article.title}")
-            context_lines.append(f"Source: {article.source} ({date_str})")
-            context_lines.append(f"URL: {article.url}")
-            
-            # Clean and truncate content
-            content = article.content[:max_content_length] if article.content else "No content"
-            content = content.strip()
-            context_lines.append(f"Content: {content}...")
-            context_lines.append("")  # Empty line between articles
-        
-        return "\n".join(context_lines)
-    
-    def _build_system_prompt(self) -> str:
-        """Build the system prompt for the LLM
-        
-        Returns:
-            System prompt string
-        """
-        return """You are a friendly and helpful crypto news analyst assistant. You provide information about cryptocurrency news from recent articles.
-
-RESPONSE GUIDELINES:
-
-1. FOR CASUAL GREETINGS AND CONVERSATION:
-   - Respond naturally and conversationally (e.g., "Hello! How can I help you with crypto news today?")
-   - Do NOT say "I don't have information" for greetings, small talk, or general questions
-   - Be friendly and helpful
-
-2. USING CHAT HISTORY:
-   - IMPORTANT: You have access to the previous messages in this conversation
-   - When the user asks about something mentioned earlier (e.g., "that meeting", "that article", "what you said"), use information from the chat history
-   - If the current articles don't contain the answer BUT the chat history does, use the information from chat history
-   - You can reference information from previous messages without citations when it's from this conversation
-   - Example: If you previously mentioned "Trump and Xi met in South Korea", and the user asks "who is involved in that meeting?", answer "Trump and Xi" based on the chat history
-
-3. FOR CRYPTO NEWS QUESTIONS:
-   - When articles are provided and relevant: Use information from the articles and cite sources
-   - When articles are provided but NOT relevant: First check if chat history has the answer, then use general knowledge if needed
-   - When NO articles are provided: Check chat history first, then use general knowledge
-   - Prioritize chat history over general knowledge when answering follow-up questions
-
-4. CITATION FORMAT (when using articles):
-   - Use this format: "According to [Article N]..."
-   - Include source and date: "According to [Article 1] from CoinTelegraph (Jan 20, 2025)"
-   - Example: "According to [Article 2] from TheDefiant (Oct 28, 2025), Bitcoin reached $70,000."
-   - You MUST cite every fact that comes from the provided articles
-   - When using information from chat history, you don't need article citations (it's from the conversation)
-
-5. RESPONSE STRUCTURE:
-   - Start with a direct, natural answer
-   - Provide supporting details with citations when using articles
-   - Be concise but conversational
-   - DO NOT include a "Sources:" section - sources are displayed separately
-
-6. WHAT TO AVOID:
-   - DON'T say "I don't have information" when the answer is in the chat history
-   - DON'T say "I don't have information" for casual conversation or general questions
-   - DON'T make up specific facts that aren't in articles or chat history
-   - DON'T forget to cite sources when using information from articles
-   - DO respond naturally and helpfully even when articles don't directly help
-
-Remember: Be helpful, conversational, and natural. Use articles when they're relevant, and use chat history when answering follow-up questions or references to previous messages."""
-    
-    async def generate_streaming_response(
-        self,
-        question: str,
-        articles: List[Article],
-        chat_history: Optional[List[BaseMessage]] = None
-    ) -> AsyncGenerator[str, None]:
-        """Generate streaming LLM response with citations and conversation history
-        
-        Args:
-            question: User's question
-            articles: List of relevant articles
-            chat_history: Optional list of previous messages for context
-            
-        Yields:
-            Text chunks of the response
-        """
-        try:
-            # Handle no articles case
-            if not articles:
-                yield "I apologize, but I couldn't find relevant articles in our database to answer this question. "
-                yield "Please try a different query or refine your search terms."
-                return
-            
-            # Build context with articles
-            context = self._build_context_message(articles)
-            
-            # Build messages list
-            messages = [SystemMessage(content=self._build_system_prompt())]
-            
-            # Add chat history if provided
-            if chat_history:
-                messages.extend(chat_history)
-                logger.info(f"Added {len(chat_history)} messages from chat history (total messages: {len(messages)})")
-                # Log a sample of the history for debugging
-                if len(chat_history) > 0:
-                    logger.debug(f"Last assistant message in history: {chat_history[-1].content[:200] if isinstance(chat_history[-1], AIMessage) else 'N/A'}")
-            else:
-                logger.debug("No chat history provided")
-            
-            # Add current context and question
-            user_message = f"{context}\n\nUser Question: {question}"
-            messages.append(HumanMessage(content=user_message))
-            
-            # Stream response from LLM (works with both Ollama and OpenAI)
-            chunk_count = 0
-            full_response = ""
-            
-            async for chunk in self.langchain_llm.astream(messages):
-                if chunk.content:
-                    chunk_count += 1
-                    full_response += chunk.content
-                    logger.debug(f"Chunk {chunk_count}: {len(chunk.content)} chars")
-                    yield chunk.content
-            
-            logger.info(
-                f"LLM streaming complete ({self.provider}): "
-                f"{chunk_count} chunks, {len(full_response)} chars total"
-            )
-        
-        except Exception as e:
-            logger.error(f"Error generating LLM response: {e}")
-            yield f"Error generating response: {str(e)}"
 
 
 # Singleton instance

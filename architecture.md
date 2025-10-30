@@ -10,8 +10,9 @@ High-level overview of the Crypto News Agent's technical design and data flows.
 flowchart LR
     USER[👤 User] --> REACT[⚛️ React]
     REACT --> API[🚀 FastAPI]
-    API --> SEARCH[(🔍 Search)]
-    API --> LLM[🤖 LLM]
+    API --> AGENT[🤖 RAG Agent]
+    AGENT --> SEARCH[(🔍 Search)]
+    AGENT --> LLM[🤖 LLM]
 
     CRON[⏰ Cron] --> SCRAPER[🕷️ Scraper]
     SCRAPER --> DB[(💾 SQLite)]
@@ -23,7 +24,7 @@ flowchart LR
 **Two Pipelines:**
 
 1. **Background**: Cron → Scraper → Database → Search Indexes
-2. **Real-time**: User → Query → Search → LLM → Streaming Response
+2. **Real-time**: User → Query → **RAG Agent** → (Search if needed) → LLM → Streaming Response
 
 ---
 
@@ -65,28 +66,44 @@ flowchart TB
 
 ---
 
-## User Query Flow (Real-time)
+## User Query Flow (Real-time) - RAG Agent Architecture
 
 ```mermaid
 flowchart TB
     USER[👤 Query] --> API[🚀 FastAPI]
     API --> MOD[🛡️ Moderation]
-    MOD --> SEARCH[🔎 Search]
-    SEARCH --> QDRANT & DB
-    SEARCH --> LLM[🤖 LLM]
+    MOD --> AGENT[🤖 RAG Agent]
+
+    AGENT --> DECIDE{Should Search?}
+    DECIDE -->|Yes| IMPROVE[Query Improvement]
+    DECIDE -->|No| HISTORY[Use Chat History]
+
+    IMPROVE --> SEARCH[🔎 Semantic Search]
+    SEARCH --> QDRANT[(Qdrant)]
+    QDRANT --> ARTICLES[Article Context]
+
+    ARTICLES --> LLM[LLM Generation]
+    HISTORY --> LLM
     LLM --> OLLAMA[Ollama] & OPENAI[OpenAI]
-    LLM -.->|SSE| USER
+    LLM -.->|SSE Stream| USER
+
+    AGENT --> SESSION[💾 Session Manager]
+    SESSION --> HISTORY
 ```
 
-**Pipeline Steps:**
+**RAG Agent Pipeline:**
 
-1. **Moderation**: Transformers pipeline (unitary/toxic-bert) checks for toxic/inappropriate content (threshold: 0.5)
-2. **Search**:
-   - Generate query embedding (384-dim)
-   - Qdrant semantic search
-   - Filter by date, return top-K
-3. **LLM Context**: Build prompt with retrieved articles + chat history
-4. **Stream Response**: Token-by-token via Server-Sent Events
+1. **Moderation**: Transformers pipeline (unitary/toxic-bert) checks for toxic/inappropriate content
+2. **Agent Decision**: Intelligent heuristic determines if search is needed:
+   - Skips search for: greetings, conversation meta-questions ("what did I ask?"), follow-ups using chat history
+   - Performs search for: new information queries about crypto news
+3. **Query Improvement**: Expands abbreviations (BTC → Bitcoin, ETH → Ethereum) for better search
+4. **Semantic Search** (if needed):
+   - Hybrid search (dense + sparse embeddings)
+   - Returns top-K articles with relevance scores
+5. **Context Building**: Formats articles with citations for LLM
+6. **LLM Generation**: Streams response prioritizing article information over general knowledge
+7. **Session Storage**: Saves conversation for future context
 
 ---
 
@@ -123,12 +140,33 @@ flowchart TB
 4. If yes → use OpenAI (paid, cloud)
 5. If neither → error with setup instructions
 
+### RAG Agent Architecture
+
+- **Agent Pattern**: The system uses an intelligent agent that decides when to search vs. when to use chat history
+- **Decision Logic**: Heuristic-based rules prevent unnecessary searches:
+  - Conversation questions → Use chat history
+  - Greetings → Skip search, respond naturally
+  - Information queries → Perform semantic search
+- **Query Optimization**: Automatically improves queries (expands abbreviations) before searching
+- **Article-First Responses**: System prompt prioritizes article information over general LLM knowledge
+- **Smart Caching**: Avoids redundant searches when context is available in chat history
+
 ### Session Management
 
 - **Storage**: In-memory dictionary (MVP)
 - **TTL**: 60 minutes auto-expiration
 - **Purpose**: Chat history for contextual follow-up questions
 - **Header**: `X-Session-Id` for session tracking
+
+### Future Agent Expansions
+
+The current agent uses simple heuristics, but could be enhanced with:
+
+- **LLM-Based Tool Calling**: Let the LLM decide when to search (true agent pattern)
+- **Multi-Step Reasoning**: Agent could perform multiple searches iteratively
+- **Query Rewriting**: Use LLM to rewrite queries based on chat history
+- **Source Verification**: Agent could verify facts across multiple articles
+- **Answer Confidence**: Agent could request clarification when search results are ambiguous
 
 ---
 
@@ -139,22 +177,31 @@ flowchart TB
 1. React sends `POST /api/ask` with session ID
 2. FastAPI checks session for chat history
 3. Moderation validates query (passes ✓)
-4. Search service:
+4. **RAG Agent** decides to search (information query detected)
+5. Query improvement: "Bitcoin news" → "Bitcoin cryptocurrency news"
+6. Search service:
    - Checks Qdrant collection point count (auto-reloads if changed)
    - Generates query embedding (dense) + sparse embedding (BM25)
    - Qdrant hybrid search returns candidates with similarity scores
    - Retrieves article IDs from Qdrant metadata payload
-   - Filters last 30 days, returns top 5
-5. LLM builds context with articles + chat history
-6. Streams tokens via SSE:
+   - Returns top 5 articles
+7. Agent formats articles with citations and builds context
+8. LLM generates response prioritizing article facts over general knowledge
+9. Streams tokens via SSE:
    ```
    data: {"sources": [...]}
-   data: {"content": "According to"}
-   data: {"content": " [Article 1]"}
+   data: {"content": "According to [Article 1]"}
+   data: {"content": " from CoinTelegraph..."}
    data: [DONE]
    ```
-7. React displays sources + streaming response
-8. Session stores conversation for follow-ups
+10. React displays sources + streaming response
+11. Session stores conversation for follow-ups
+
+**Follow-up Query:** "what question did I just ask?"
+
+1. RAG Agent detects conversation meta-question
+2. **Skips search** (uses chat history instead)
+3. Responds directly from stored conversation context
 
 ---
 

@@ -4,20 +4,24 @@ AI-powered semantic search engine for cryptocurrency news with streaming LLM res
 
 ## What is this?
 
-A local-first RAG (Retrieval-Augmented Generation) system that:
+A local-first RAG (Retrieval-Augmented Generation) **agent** that:
 
 - **Scrapes** crypto news from CoinTelegraph, DL News, and The Defiant
 - **Indexes** articles using semantic search
+- **Intelligently decides** when to search vs. use chat history (agent pattern)
 - **Answers** questions with AI-generated responses backed by real sources
+- **Prioritizes** article information over general LLM knowledge
 - **Streams** responses in real-time with proper citations
 - **Runs locally** with free LLM (Ollama) or OpenAI
 
 **Key Features:**
 
-- 🔍 Semantic search for accurate article retrieval
-- 🤖 Choice of LLM: Ollama (free, local) or OpenAI (cloud)
+- 🤖 **RAG Agent**: Intelligently decides when to search vs. use chat history
+- 🔍 Semantic search for accurate article retrieval (only when needed)
+- 📝 Query improvement: Auto-expands abbreviations for better search
 - 📰 Auto-refresh with cron jobs (no server restart needed)
 - 💬 Conversational context with session management
+- 🎯 Article-first responses: Prioritizes retrieved articles over general knowledge
 - 🛡️ Content moderation with transformers pipeline (unitary/toxic-bert)
 - ⚡ Streaming responses via Server-Sent Events
 
@@ -174,12 +178,35 @@ tail -f backend/logs/cron.log
 
 ---
 
+## 🤖 RAG Agent Architecture
+
+The system uses an **intelligent agent** that decides when to search vs. use chat history:
+
+- **Agent Decision**: Heuristic-based rules prevent unnecessary searches
+  - Skips search for: greetings, conversation questions ("what did I ask?"), follow-ups
+  - Performs search for: new information queries about crypto news
+- **Query Improvement**: Auto-expands abbreviations (BTC → Bitcoin) for better search
+- **Article-First**: System prioritizes retrieved articles over general LLM knowledge
+- **Smart Caching**: Uses chat history when context is available, avoiding redundant searches
+
+**Future Expansions:**
+
+- LLM-based tool calling (let LLM decide when to search)
+- Multi-step reasoning with iterative searches
+- Query rewriting based on chat history
+- Source verification across multiple articles
+
+See [Architecture](./architecture.md) for detailed flow diagrams.
+
+---
+
 ## 📖 Usage
 
 ### Web UI
 
 1. Ask questions: "What's the latest Bitcoin news?", "Explain Ethereum Layer 2"
 2. View results: Source cards with metadata, streaming AI responses with citations
+3. **Agent Behavior**: Notice it skips search for follow-ups like "what did I just ask?"
 
 ### API Endpoints
 

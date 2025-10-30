@@ -12,6 +12,7 @@ from app.services.moderation import get_moderation_service
 from app.services.search import get_search_service
 from app.services.llm import get_llm_service
 from app.services.session import get_session_manager
+from app.services.rag_agent import get_rag_agent_service
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ moderation_service = get_moderation_service()
 search_service = get_search_service()
 llm_service = get_llm_service()
 session_manager = get_session_manager()
+rag_agent_service = get_rag_agent_service()
 
 
 async def generate_sse_response(
@@ -30,59 +32,21 @@ async def generate_sse_response(
     session_id: Optional[str] = None,
     top_k: int = 5
 ) -> AsyncGenerator[str, None]:
-    """Generate SSE formatted response with streaming LLM chunks
+    """Generate SSE formatted response with streaming RAG agent
+    
+    The RAG agent intelligently decides whether to search based on the question.
+    Only searches when new information is needed, not for conversation context.
     
     Args:
         question: User's question
         db: Database session
         session_id: Optional session ID for chat history
-        top_k: Number of articles to retrieve
+        top_k: Number of articles to retrieve (if search is performed)
         
     Yields:
         SSE formatted strings
     """
     try:
-        # Semantic search for relevant articles
-        search_results = search_service.search(
-            question,
-            db,
-            top_k=top_k
-        )
-        
-        # Extract articles and scores, deduplicating by article ID
-        seen_ids = set()
-        unique_articles = []
-        articles_with_scores = {}
-        
-        for article, score in search_results:
-            if article.id not in seen_ids:
-                unique_articles.append(article)
-                articles_with_scores[article.id] = score
-                seen_ids.add(article.id)
-        
-        articles = unique_articles
-        
-        # Log if duplicates were found
-        if len(search_results) > len(articles):
-            logger.warning(f"Found {len(search_results) - len(articles)} duplicate articles in search results (filtered out)")
-        
-        # Send article metadata first
-        articles_data = [
-            {
-                "id": article.id,
-                "title": article.title,
-                "source": article.source,
-                "url": article.url,
-                "published_date": article.published_date.isoformat() + "Z" if article.published_date else None,
-                "similarity_score": articles_with_scores.get(article.id, 0.0)
-            }
-            for article in articles
-        ]
-        
-        sources_event = f"data: {json.dumps({'sources': articles_data})}\n\n"
-        logger.info(f"Sending sources event: {len(articles_data)} sources")
-        yield sources_event
-        
         # Get chat history for this session (if session_id provided)
         chat_history = None
         if session_id:
@@ -91,14 +55,31 @@ async def generate_sse_response(
             assistant_msgs = len([m for m in chat_history if isinstance(m, AIMessage)])
             logger.info(f"Session {session_id}: Retrieved {len(chat_history)} messages from history ({user_msgs} user + {assistant_msgs} assistant)")
             if chat_history:
-                logger.debug(f"Chat history contains {len([m for m in chat_history if hasattr(m, 'content')])} messages with content")
+                # Log recent messages for debugging
+                recent_msgs = chat_history[-4:] if len(chat_history) > 4 else chat_history
+                for i, msg in enumerate(recent_msgs):
+                    msg_type = "Human" if isinstance(msg, HumanMessage) else "AI"
+                    content_preview = msg.content[:80] if hasattr(msg, 'content') else str(msg)[:80]
+                    logger.debug(f"  Recent[{i}]: {msg_type} - {content_preview}...")
         else:
             logger.debug("No session_id provided, no chat history will be used")
         
-        # Generate and stream LLM response
+        # Get sources from RAG agent (only if search will be performed)
+        articles_data = rag_agent_service.get_search_results_for_sources(
+            question, db, chat_history, top_k
+        )
+        
+        # Send article metadata
+        sources_event = f"data: {json.dumps({'sources': articles_data})}\n\n"
+        logger.info(f"Sending sources event: {len(articles_data)} sources")
+        yield sources_event
+        
+        # Generate and stream RAG agent response
         chunk_count = 0
         full_response = ""
-        async for chunk in llm_service.generate_streaming_response(question, articles, chat_history):
+        async for chunk in rag_agent_service.generate_streaming_response(
+            question, db, chat_history, top_k
+        ):
             if chunk:
                 chunk_count += 1
                 full_response += chunk
@@ -106,13 +87,17 @@ async def generate_sse_response(
                 event = f"data: {json.dumps({'content': chunk})}\n\n"
                 yield event
         
-        logger.info(f"Streamed {chunk_count} chunks")
+        logger.info(f"Streamed {chunk_count} chunks via RAG agent")
         
         # Save conversation to session history
         if session_id and full_response:
             session_manager.add_message(session_id, "user", question)
             session_manager.add_message(session_id, "assistant", full_response)
-            logger.info(f"Session {session_id}: Saved conversation (user + assistant messages)")
+            logger.info(f"Session {session_id}: Saved conversation (user: '{question[:50]}...', assistant: {len(full_response)} chars)")
+            
+            # Verify the save worked
+            verify_history = session_manager.get_messages(session_id)
+            logger.debug(f"Session {session_id}: Verification - now has {len(verify_history)} messages in history")
         
         # Send completion signal
         yield "data: [DONE]\n\n"
@@ -126,16 +111,16 @@ async def generate_sse_response(
 async def ask_question(
     request: QuestionRequest,
     db: Session = Depends(get_db),
-    x_session_id: Optional[str] = Header(None),
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
     top_k: int = Query(5, ge=1, le=20, description="Number of articles to retrieve (1-20)")
 ):
-    """Handle user questions with semantic search and streaming LLM response
+    """Handle user questions with RAG agent (intelligent search + streaming response)
     
     Args:
         request: Question request with user question
         db: Database session
         x_session_id: Optional session ID from header for chat history
-        top_k: Number of articles to retrieve (default: 5)
+        top_k: Number of articles to retrieve if search is performed (default: 5)
         
     Returns:
         StreamingResponse with SSE formatted chunks
