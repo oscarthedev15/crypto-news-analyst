@@ -18,6 +18,7 @@ torch>=2.0.0  # Required for transformers models
 langchain-openai==1.0.1
 langchain-ollama==1.0.0  # For local LLM support (free!)
 langchain-core==1.0.2
-
+langchain-community>=0.3.0  # For FAISS vectorstore and BM25 retriever
+langchain-huggingface>=1.0.0  # For HuggingFace embeddings (non-deprecated)  
 # Testing dependencies
 aiohttp==3.9.1

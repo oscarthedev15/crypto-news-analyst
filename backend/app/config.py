@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./news_articles.db"
     
     # Embedding
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "all-mpnet-base-v2"  # Upgraded: Better quality (768-dim vs 384-dim)
     
     # Search
     top_k_articles: int = 5
