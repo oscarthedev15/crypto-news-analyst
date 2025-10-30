@@ -125,7 +125,7 @@ python scripts/ingest_news.py --max-articles-per-source 30
 ### 5. Start Backend
 
 ```bash
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
 Verify LLM provider:
