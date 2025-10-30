@@ -123,6 +123,45 @@ flowchart TB
 
 ---
 
+## Async concurrency and streaming
+
+- **FastAPI async**: User endpoints (e.g., `POST /api/ask`) are `async def` and return an SSE `StreamingResponse`.
+- **Parallel requests**: FastAPI/Uvicorn run requests concurrently; no extra thread pools/semaphores required.
+- **LLM streaming**: Tokens stream via LangChain `astream`, forwarded to clients as SSE events.
+
+Minimal flow:
+
+```python
+# Endpoint (simplified)
+@router.post("/ask")
+async def ask_question(...):
+    return StreamingResponse(
+        generate_sse_response(question, db, session_id, top_k),
+        media_type="text/event-stream",
+    )
+
+# Agent stream (simplified)
+async for chunk in llm_service.langchain_llm.astream(messages):
+    if chunk.content:
+        yield chunk.content
+```
+
+Concurrent test (runs in parallel automatically):
+
+```bash
+curl -N -X POST "http://localhost:8000/api/ask" -H "Content-Type: application/json" -d '{"question": "query1"}' &
+curl -N -X POST "http://localhost:8000/api/ask" -H "Content-Type: application/json" -d '{"question": "query2"}' &
+curl -N -X POST "http://localhost:8000/api/ask" -H "Content-Type: application/json" -d '{"question": "query3"}' &
+```
+
+Key points:
+
+- **Use `async def` endpoints**
+- **Stream with `astream` and SSE**
+- **Let FastAPI manage concurrency**
+
+---
+
 ## Key Features
 
 ### Dynamic Index Reloading
