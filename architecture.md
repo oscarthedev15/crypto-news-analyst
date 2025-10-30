@@ -42,7 +42,7 @@ flowchart TB
     SCRAPER --> CT & TD & DL
     CT & TD & DL --> DB[(💾 SQLite)]
     DB --> EMBED[🧠 Embeddings]
-    EMBED --> FAISS[(FAISS)]
+    EMBED --> QDRANT[(Qdrant)]
 ```
 
 **Components:**
@@ -51,7 +51,7 @@ flowchart TB
 - **Scraper**: `httpx` + `BeautifulSoup` with User-Agent headers, parallel fetching
 - **Database**: SQLite with article metadata (title, content, URL, dates)
 - **Embeddings**: `all-MiniLM-L6-v2` (384-dim vectors, ~50MB model)
-- **FAISS**: Vector similarity search (L2 distance)
+- **Qdrant**: Vector similarity search
 
 ---
 
@@ -62,7 +62,7 @@ flowchart TB
     USER[👤 Query] --> API[🚀 FastAPI]
     API --> MOD[🛡️ Moderation]
     MOD --> SEARCH[🔎 Search]
-    SEARCH --> FAISS & DB
+    SEARCH --> QDRANT & DB
     SEARCH --> LLM[🤖 LLM]
     LLM --> OLLAMA[Ollama] & OPENAI[OpenAI]
     LLM -.->|SSE| USER
@@ -73,7 +73,7 @@ flowchart TB
 1. **Moderation**: Transformers pipeline (unitary/toxic-bert) checks for toxic/inappropriate content (threshold: 0.5)
 2. **Search**:
    - Generate query embedding (384-dim)
-   - FAISS semantic search
+   - Qdrant semantic search
    - Filter by date, return top-K
 3. **LLM Context**: Build prompt with retrieved articles + chat history
 4. **Stream Response**: Token-by-token via Server-Sent Events
@@ -86,7 +86,7 @@ flowchart TB
 | -------------- | ------------------------------------------ |
 | **Frontend**   | React 18, Vite, Server-Sent Events         |
 | **Backend**    | FastAPI, SQLAlchemy, LangChain             |
-| **Search**     | FAISS (semantic)                           |
+| **Search**     | Qdrant (semantic)                          |
 | **Embeddings** | sentence-transformers (all-MiniLM-L6-v2)   |
 | **LLM**        | Ollama (local) or OpenAI (cloud)           |
 | **Moderation** | transformers pipeline (unitary/toxic-bert) |
@@ -131,7 +131,7 @@ flowchart TB
 4. Search service:
    - Checks if indexes updated (auto-reload if needed)
    - Generates query embedding
-   - FAISS returns candidates with L2 distances
+   - Qdrant returns candidates with similarity scores
    - Filters last 30 days, returns top 5
 5. LLM builds context with articles + chat history
 6. Streams tokens via SSE:

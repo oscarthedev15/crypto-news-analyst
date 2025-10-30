@@ -14,7 +14,7 @@ A local-first RAG (Retrieval-Augmented Generation) system that:
 
 **Key Features:**
 
-- 🔍 Semantic search (FAISS) for accurate article retrieval
+- 🔍 Semantic search for accurate article retrieval
 - 🤖 Choice of LLM: Ollama (free, local) or OpenAI (cloud)
 - 📰 Auto-refresh with cron jobs (no server restart needed)
 - 💬 Conversational context with session management
@@ -141,7 +141,7 @@ Set up cron job to auto-refresh articles:
 **Features:**
 
 - ✅ Auto-fetches new articles from all sources
-- ✅ Rebuilds search indexes (FAISS)
+- ✅ Rebuilds search indexes
 - ✅ Server picks up changes **without restart**
 
 Monitor logs:
@@ -212,7 +212,7 @@ SIMILARITY_THRESHOLD=0.3
 
 **Search Issues:**
 
-- **"FAISS index not found"**: Run `python backend/scripts/ingest_news.py`
+- **"Search index not found"**: Run `python backend/scripts/ingest_news.py`
 - **No articles found**: Increase count: `--max-articles-per-source 50`
 - **Search not working**: Rebuild: `POST http://localhost:8000/api/rebuild-index`
 
@@ -225,7 +225,7 @@ SIMILARITY_THRESHOLD=0.3
 
 ## 🛠️ Tech Stack
 
-**Backend:** FastAPI, SQLAlchemy, FAISS, sentence-transformers, LangChain, transformers (unitary/toxic-bert), SQLite
+**Backend:** FastAPI, SQLAlchemy, Qdrant, sentence-transformers, LangChain, transformers (unitary/toxic-bert), SQLite
 
 **Frontend:** React 18, Vite, Server-Sent Events
 
