@@ -16,7 +16,7 @@
 #
 # This script will:
 #   • Fetch new crypto articles
-#   • Update the vector database (FAISS index)
+#   • Update the vector database (Qdrant index)
 #   • Server will auto-pick up changes (no restart needed!)
 
 # ============================================================================
@@ -114,7 +114,7 @@ if [ "$1" == "--setup" ]; then
     echo ""
     echo "The job will run on schedule and:"
     echo "  • Fetch new crypto articles"
-    echo "  • Update the vector database (FAISS index)"
+    echo "  • Update the vector database (Qdrant index)"
     echo "  • Log output to: backend/logs/cron.log"
     echo ""
     echo "To change the schedule, run setup again with desired interval:"

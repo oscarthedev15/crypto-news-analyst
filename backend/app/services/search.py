@@ -11,9 +11,11 @@ from langchain_qdrant import (
     FastEmbedSparse,
 )
 from langchain_core.documents import Document
+from qdrant_client import QdrantClient
 
 from app.models import Article
 from app.services.embeddings import get_embedding_service
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +23,6 @@ logger = logging.getLogger(__name__)
 # This file is at: backend/app/services/search.py
 # Data directory is at: backend/data/
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
-QDRANT_DIR = DATA_DIR / "qdrant_vectorstore"
 COLLECTION_NAME = "crypto_news_articles"
 
 
@@ -33,7 +34,19 @@ class SearchService:
         self.embedding_service = get_embedding_service()
         self.sparse_embeddings = None
         self.article_ids_map = {}
-        self._index_load_time = None
+        self._index_point_count = None  # Track point count instead of modification time
+        self.qdrant_client = None
+
+        # Initialize Qdrant client for server connection
+        try:
+            client_kwargs = {"url": settings.qdrant_url}
+            if settings.qdrant_api_key:
+                client_kwargs["api_key"] = settings.qdrant_api_key
+            self.qdrant_client = QdrantClient(**client_kwargs)
+            logger.info(f"Initialized Qdrant client: {settings.qdrant_url}")
+        except Exception as e:
+            logger.error(f"Failed to initialize Qdrant client: {e}")
+            raise
 
         # Initialize sparse embeddings for hybrid search
         # Hybrid search provides better results by combining semantic (dense) and keyword (sparse) matching
@@ -100,15 +113,18 @@ class SearchService:
         # Build Qdrant vector store with hybrid search (required)
         # Hybrid search combines semantic (dense) and keyword (sparse) matching
         logger.info("Building Qdrant vector store with hybrid search (dense + sparse)...")
-        self.vectorstore = QdrantVectorStore.from_documents(
-            documents,
-            embedding=self.embedding_service.langchain_embeddings,
-            sparse_embedding=self.sparse_embeddings,
-            path=str(QDRANT_DIR),
-            collection_name=COLLECTION_NAME,
-            retrieval_mode=RetrievalMode.HYBRID,
-            vector_name="dense",
-        )
+        vectorstore_kwargs = {
+            "documents": documents,
+            "embedding": self.embedding_service.langchain_embeddings,
+            "sparse_embedding": self.sparse_embeddings,
+            "url": settings.qdrant_url,
+            "collection_name": COLLECTION_NAME,
+            "retrieval_mode": RetrievalMode.HYBRID,
+            "vector_name": "dense",
+        }
+        if settings.qdrant_api_key:
+            vectorstore_kwargs["api_key"] = settings.qdrant_api_key
+        self.vectorstore = QdrantVectorStore.from_documents(**vectorstore_kwargs)
         logger.info("Built index with hybrid search - combining semantic and keyword matching")
         
         # Save article IDs mapping
@@ -118,51 +134,70 @@ class SearchService:
             pickle.dump(self.article_ids_map, f)
         
         logger.info(f"Semantic index built successfully. Indexed {len(articles)} articles.")
+        
+        # Update point count after building index
+        self._index_point_count = self._get_collection_point_count()
     
-    def _get_index_modification_time(self) -> Optional[float]:
-        """Get the latest modification time of index files"""
+    def _get_collection_point_count(self) -> Optional[int]:
+        """Get the current point count of the collection"""
         try:
-            if not QDRANT_DIR.exists():
+            if not self.qdrant_client:
                 return None
-            # Check modification time of the collection directory
-            return QDRANT_DIR.stat().st_mtime
+            # Get collection info which includes point count
+            collection_info = self.qdrant_client.get_collection(COLLECTION_NAME)
+            if collection_info:
+                return collection_info.points_count
+            return None
         except Exception as e:
-            logger.error(f"Error checking index modification time: {e}")
+            logger.debug(f"Error getting collection point count: {e}")
             return None
     
     def _should_reload_index(self) -> bool:
-        """Check if index files have been modified since last load"""
-        if self.vectorstore is None or self._index_load_time is None:
+        """Check if collection has changed by comparing point count"""
+        if self.vectorstore is None or self._index_point_count is None:
             return True
         
-        current_mod_time = self._get_index_modification_time()
-        if current_mod_time is None:
+        current_point_count = self._get_collection_point_count()
+        if current_point_count is None:
+            # If we can't get point count, don't reload (safer)
             return False
         
-        return current_mod_time > self._index_load_time
+        # Reload if point count has changed (new articles added)
+        return current_point_count != self._index_point_count
     
     def load_index(self, force: bool = False) -> bool:
-        """Load Qdrant vectorstore from disk
+        """Load Qdrant vectorstore from server
         
         Tries to load with hybrid search first (if sparse embeddings available),
         falls back to dense-only if that fails or sparse embeddings unavailable.
         """
         try:
-            if not QDRANT_DIR.exists():
-                logger.warning("Qdrant storage directory not found")
+            # Check if collection exists
+            if not self.qdrant_client:
+                logger.error("Qdrant client not initialized")
+                return False
+            
+            collections = self.qdrant_client.get_collections().collections
+            collection_exists = any(c.name == COLLECTION_NAME for c in collections)
+            
+            if not collection_exists:
+                logger.warning(f"Qdrant collection '{COLLECTION_NAME}' not found on server")
                 return False
 
             # Try hybrid search first if sparse embeddings are available
             # This is preferred for better search quality
             if self.sparse_embeddings:
                 try:
-                    self.vectorstore = QdrantVectorStore.from_existing_collection(
-                        embedding=self.embedding_service.langchain_embeddings,
-                        sparse_embedding=self.sparse_embeddings,
-                        collection_name=COLLECTION_NAME,
-                        path=str(QDRANT_DIR),
-                        vector_name="dense",
-                    )
+                    load_kwargs = {
+                        "embedding": self.embedding_service.langchain_embeddings,
+                        "sparse_embedding": self.sparse_embeddings,
+                        "collection_name": COLLECTION_NAME,
+                        "url": settings.qdrant_url,
+                        "vector_name": "dense",
+                    }
+                    if settings.qdrant_api_key:
+                        load_kwargs["api_key"] = settings.qdrant_api_key
+                    self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
                     logger.info("Loaded vectorstore with hybrid search (dense + sparse)")
                 except Exception as e:
                     logger.warning(
@@ -171,22 +206,28 @@ class SearchService:
                     )
                     # Fall back to dense-only if hybrid load fails
                     # (e.g., collection was built without sparse vectors)
-                    self.vectorstore = QdrantVectorStore.from_existing_collection(
-                        embedding=self.embedding_service.langchain_embeddings,
-                        collection_name=COLLECTION_NAME,
-                        path=str(QDRANT_DIR),
-                        vector_name="dense",
-                    )
+                    load_kwargs = {
+                        "embedding": self.embedding_service.langchain_embeddings,
+                        "collection_name": COLLECTION_NAME,
+                        "url": settings.qdrant_url,
+                        "vector_name": "dense",
+                    }
+                    if settings.qdrant_api_key:
+                        load_kwargs["api_key"] = settings.qdrant_api_key
+                    self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
                     logger.info("Loaded vectorstore with dense-only search")
             else:
                 # Dense-only mode (sparse embeddings not available)
                 logger.warning("Loading with dense-only search (sparse embeddings unavailable)")
-                self.vectorstore = QdrantVectorStore.from_existing_collection(
-                    embedding=self.embedding_service.langchain_embeddings,
-                    collection_name=COLLECTION_NAME,
-                    path=str(QDRANT_DIR),
-                    vector_name="dense",
-                )
+                load_kwargs = {
+                    "embedding": self.embedding_service.langchain_embeddings,
+                    "collection_name": COLLECTION_NAME,
+                    "url": settings.qdrant_url,
+                    "vector_name": "dense",
+                }
+                if settings.qdrant_api_key:
+                    load_kwargs["api_key"] = settings.qdrant_api_key
+                self.vectorstore = QdrantVectorStore.from_existing_collection(**load_kwargs)
             
             # Load article IDs mapping
             import pickle
@@ -195,7 +236,8 @@ class SearchService:
                 with open(ids_map_file, 'rb') as f:
                     self.article_ids_map = pickle.load(f)
             
-            self._index_load_time = self._get_index_modification_time()
+            # Store current point count to detect future changes
+            self._index_point_count = self._get_collection_point_count()
             num_docs = len(self.article_ids_map)
             logger.info(f"Loaded Qdrant vectorstore with {num_docs} articles")
             

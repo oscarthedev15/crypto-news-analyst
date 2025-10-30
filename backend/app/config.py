@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///./news_articles.db"
     
+    # Qdrant Vector Database
+    qdrant_url: str = "http://localhost:6333"  # Qdrant server URL
+    qdrant_api_key: Optional[str] = None  # Optional API key for Qdrant Cloud
+    
     # Embedding
     embedding_model: str = "all-mpnet-base-v2"  # Upgraded: Better quality (768-dim vs 384-dim)
     
