@@ -123,6 +123,18 @@ flowchart TB
 
 ---
 
+## Design Rationale (brief)
+
+- Model selection (embeddings): `all-mpnet-base-v2` for higher semantic recall than smaller 384-dim models while remaining CPU-friendly; balances quality and latency for news Q&A. Configurable via `EMBEDDING_MODEL`.
+- LLM selection: Prefer local via Ollama (`llama3.1:8b` for balanced quality or `qwen2.5:14b` for higher quality). Falls back to OpenAI if configured. This keeps costs at zero by default and enables streaming with consistent interfaces.
+- FastAPI: Async-first, excellent SSE support, and straightforward dependency injection; handles concurrent streaming requests without extra orchestration.
+- LangChain: Provides unified chat/streaming interfaces and tool-friendly abstractions; we use it narrowly for LLM streaming and prompt templating without imposing heavy orchestration.
+- Qdrant: Single-store for dense/sparse vectors and payload metadata, enabling hybrid search and eliminating separate mapping/index files; simple local persistence via `qdrant-storage/`.
+
+These choices optimize for local-first development, low latency, and minimal operational overhead while keeping quality high for retrieval-augmented answers.
+
+---
+
 ## Async concurrency and streaming
 
 - **FastAPI async**: User endpoints (e.g., `POST /api/ask`) are `async def` and return an SSE `StreamingResponse`.
@@ -246,7 +258,7 @@ The current agent uses simple heuristics, but could be enhanced with:
 
 ## Architecture Decisions
 
-See [reflection.md](./reflection.md) for detailed discussion of MVP choices, trade-offs, and future improvements.
+See [reflection.md](./reflection.md) for lessons learned and the future roadmap. Detailed trade-offs for non-functional requirements (cost, latency, local-first) are captured there to avoid redundancy with this document.
 
 ---
 

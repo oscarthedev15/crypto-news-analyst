@@ -27,8 +27,8 @@ A local-first RAG (Retrieval-Augmented Generation) **agent** that:
 
 **📖 Documentation**
 
-- [Architecture](./architecture.md) - System design and data flows
-- [Development Notes](./reflection.md) - MVP decisions, obstacles, and future improvements
+- [Architecture](./documentation/architecture.md) - System design and data flows
+- [Development Notes](./documentation/reflection.md) - MVP decisions, obstacles, and future improvements
 - [Testing Guide](./backend/performance-test/README.md) - Performance and security test suite
 
 ---
@@ -200,28 +200,6 @@ tail -f backend/logs/cron.log
 
 ---
 
-## 🤖 RAG Agent Architecture
-
-The system uses an **intelligent agent** that decides when to search vs. use chat history:
-
-- **Agent Decision**: Heuristic-based rules prevent unnecessary searches
-  - Skips search for: greetings, conversation questions ("what did I ask?"), follow-ups
-  - Performs search for: new information queries about crypto news
-- **Query Improvement**: Auto-expands abbreviations (BTC → Bitcoin) for better search
-- **Article-First**: System prioritizes retrieved articles over general LLM knowledge
-- **Smart Caching**: Uses chat history when context is available, avoiding redundant searches
-
-**Future Expansions:**
-
-- LLM-based tool calling (let LLM decide when to search)
-- Multi-step reasoning with iterative searches
-- Query rewriting based on chat history
-- Source verification across multiple articles
-
-See [Architecture](./architecture.md) for detailed flow diagrams.
-
----
-
 ## 📖 Usage
 
 ### Web UI
@@ -294,27 +272,10 @@ SIMILARITY_THRESHOLD=0.3
 
 ---
 
-## 📦 Storage Architecture
+## 📚 More Details
 
-**Data Storage:**
-
-- **SQLite Database** (`backend/news_articles.db`): Article metadata (title, content, URL, dates, source)
-- **Qdrant Vector Database** (`qdrant-storage/`): Vector embeddings + metadata for semantic search
-  - Created automatically when Docker container starts
-  - Stores dense vectors (embeddings), sparse vectors (BM25), and article metadata
-  - Single source of truth for search indexes - no separate mapping files needed
-
-**Key Design Decision:** All search-related data (vectors, metadata, article IDs) is stored in Qdrant. This eliminates the need for separate pickle files or mapping directories, simplifying the architecture and ensuring consistency.
-
----
-
-## 🛠️ Tech Stack
-
-**Backend:** FastAPI, SQLAlchemy, Qdrant, sentence-transformers, LangChain, transformers (unitary/toxic-bert), SQLite
-
-**Frontend:** React 18, Vite, Server-Sent Events
-
-**Infrastructure:** Python 3.9+, Node.js 18+, Cron, Ollama/OpenAI
+- For architecture, data flows, and design rationale, see [Architecture](./documentation/architecture.md).
+- For lessons learned and future roadmap, see [Development Notes](./documentation/reflection.md).
 
 ---
 
