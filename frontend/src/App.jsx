@@ -80,23 +80,20 @@ function App() {
           setIsLoading(false);
         },
         (errorMsg) => {
-          setError(errorMsg);
+          // Remove the assistant message placeholder on error
           setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMessageId
-                ? {
-                    ...msg,
-                    content: `Error: ${errorMsg}`,
-                    isStreaming: false,
-                  }
-                : msg
-            )
+            prev.filter((msg) => msg.id !== assistantMessageId)
           );
+          setError(errorMsg);
           setIsLoading(false);
         }
       );
     } catch (err) {
-      setError(err.message);
+      // Remove the assistant message placeholder on error
+      setMessages((prev) =>
+        prev.filter((msg) => msg.id !== assistantMessageId)
+      );
+      setError(err.message || "Failed to send question");
       setIsLoading(false);
     }
   };

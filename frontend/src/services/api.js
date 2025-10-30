@@ -99,8 +99,28 @@ class CryptoNewsAPI {
       );
 
       if (!response.ok) {
-        const error = await response.json();
-        onError(error.detail || "Failed to process question");
+        let errorMessage = "Failed to process question";
+        try {
+          const error = await response.json();
+          // Handle Pydantic validation errors
+          if (error.detail) {
+            if (Array.isArray(error.detail)) {
+              // Pydantic validation error format
+              const firstError = error.detail[0];
+              if (firstError.msg) {
+                errorMessage = firstError.msg;
+              } else {
+                errorMessage = error.detail;
+              }
+            } else if (typeof error.detail === "string") {
+              errorMessage = error.detail;
+            }
+          }
+        } catch (e) {
+          // If JSON parsing fails, use default message
+          errorMessage = `Request failed with status ${response.status}`;
+        }
+        onError(errorMessage);
         return;
       }
 

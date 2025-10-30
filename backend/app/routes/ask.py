@@ -99,32 +99,31 @@ async def generate_sse_response(
         
         logger.info(f"Streamed {chunk_count} chunks")
         
-        # Check if response indicates no information available
-        # If so, send flag to hide sources
-        no_info_patterns = [
-            "i don't have information",
-            "i don't have information about that",
-            "couldn't find relevant articles",
-            "no information available",
-            "i don't have any information"
+        # Check if response uses article citations
+        # Only hide sources if there are no citations AND the response explicitly says it doesn't have information from articles
+        has_citations = bool(re.search(r'\[Article\s+\d+\]', full_response, re.IGNORECASE))
+        response_lower = full_response.lower().strip()
+        
+        # Only hide sources if:
+        # 1. No citations found AND
+        # 2. Response explicitly mentions not having information from articles/recent news
+        # (but NOT for casual greetings or general responses)
+        explicit_no_info_patterns = [
+            "i don't have information about that in the recent news articles",
+            "i don't have recent articles about",
+            "couldn't find relevant articles in our database"
         ]
         
-        response_lower = full_response.lower().strip()
-        has_no_info = any(
+        has_explicit_no_info = any(
             pattern in response_lower 
-            for pattern in no_info_patterns
+            for pattern in explicit_no_info_patterns
         )
         
-        # If no information response and no citations found, hide sources
-        if has_no_info:
-            # Check if there are any article citations
-            has_citations = bool(re.search(r'\[Article\s+\d+\]', full_response, re.IGNORECASE))
-            
-            if not has_citations:
-                # Send flag to hide sources
-                hide_sources_event = f"data: {json.dumps({'hideSources': True})}\n\n"
-                logger.info("Detected no-information response, hiding sources")
-                yield hide_sources_event
+        if has_explicit_no_info and not has_citations:
+            # Send flag to hide sources only when explicitly saying no article info
+            hide_sources_event = f"data: {json.dumps({'hideSources': True})}\n\n"
+            logger.info("Detected explicit no-article-info response, hiding sources")
+            yield hide_sources_event
         
         # Save conversation to session history
         if session_id and full_response:

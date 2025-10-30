@@ -3,7 +3,7 @@ from typing import Optional
 
 class QuestionRequest(BaseModel):
     """Validate user question input"""
-    question: str = Field(..., min_length=5, max_length=500)
+    question: str = Field(..., min_length=1, max_length=500)
     
     class Config:
         json_schema_extra = {

@@ -22,7 +22,7 @@ class ModerationService:
     TOXICITY_THRESHOLD: float = 0.5
 
     # Validation constraints
-    MIN_QUESTION_LENGTH: int = 5
+    MIN_QUESTION_LENGTH: int = 1  # Allow any non-empty question
     MAX_QUESTION_LENGTH: int = 500
     REPEATED_CHAR_LIMIT: int = 10  # 10 identical chars in a row
     SPECIAL_CHAR_RATIO_LIMIT: float = 0.5  # >50% non-alnum ASCII characters
@@ -68,11 +68,8 @@ class ModerationService:
             If not safe, reason contains explanation of why it was flagged.
         """
         # Basic validation
-        if not text:
+        if not text or not text.strip():
             return False, "Question cannot be empty"
-        
-        if len(text) < self.MIN_QUESTION_LENGTH:
-            return False, "Question must be at least 5 characters long"
         
         if len(text) > self.MAX_QUESTION_LENGTH:
             return False, "Question must not exceed 500 characters"
