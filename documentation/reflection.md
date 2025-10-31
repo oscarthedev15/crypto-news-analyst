@@ -4,13 +4,19 @@ Concise notes on lessons learned and where this project is headed next.
 
 ---
 
-## Lessons learned (selected)
+## Challenges and solutions (selected)
 
-- Scraping reliability requires URL-shape heuristics per source (path depth, slug length) with graceful fallbacks; explore JSON-LD where available to reduce selector fragility.
-- Hybrid search improves relevance over pure semantic for entity-heavy queries; keep embeddings configurable to trade accuracy vs. latency.
-- Dynamic index reloading via Qdrant metrics avoids server restarts and keeps results fresh with cron ingestion.
-- Layered safety (transformers moderation + LLM guardrails) reduces harmful outputs; occasional double-triggering is acceptable for safety.
-- Model size matters: small local models answer fast but may miss instructions; `llama3.1:8b` or `qwen2.5:14b` yield better RAG grounding.
+- Challenge: Fragile scrapers broke when sites changed markup.
+  - Solution: Added per-source URL-shape heuristics (path depth, slug length) with graceful fallbacks and opportunistic JSON-LD parsing to reduce selector dependence.
+- Challenge: Pure semantic search struggled with entity-heavy queries (tickers, project names).
+  - Solution: Implemented hybrid search (keyword + vector) and made embedding model configurable to trade accuracy for latency as needed.
+- Challenge: Index freshness required restarts after cron ingestion.
+  - Solution: Introduced dynamic index reloading based on Qdrant metrics so the service refreshes results without server restarts.
+- Challenge: Simple moderation under-blocked at api boundary allowing for some innapropriate but polite queries to reach LLM.
+  - Solution: Layered moderation with prompt engineering inside the LLM system message.
+- Challenge: Small local models were fast but sometimes missed instructions and weakened RAG grounding.
+  - Solution: Defaulted to stronger mid-size models (`llama3.1:8b`, `qwen2.5:14b`) with a fallback to smaller models when latency is critical.
+
 
 ---
 
