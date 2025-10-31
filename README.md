@@ -41,6 +41,7 @@ A local-first RAG (Retrieval-Augmented Generation) **agent** that:
   - [Ollama](https://ollama.com) (recommended, free, local) OR
   - OpenAI API key (optional, paid)
 - ~2GB disk space (+ 4-7GB per Ollama model)
+- Docker
 
 > Note on embeddings: The backend uses Hugging Face sentence-transformers for embeddings by default. Internet access is required on first run to download the embedding model, and whenever a new model is used. To run offline, ensure the model is already cached locally (e.g., run once online), or switch to a local embedding model via Ollama and update `EMBEDDING_MODEL` accordingly.
 
