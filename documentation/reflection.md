@@ -17,7 +17,6 @@ Concise notes on lessons learned and where this project is headed next.
 - Challenge: Small local models were fast but sometimes missed instructions and weakened RAG grounding.
   - Solution: Defaulted to stronger mid-size models (`llama3.1:8b`, `qwen2.5:14b`) with a fallback to smaller models when latency is critical.
 
-
 ---
 
 ## Future roadmap

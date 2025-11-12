@@ -4,21 +4,18 @@ from typing import AsyncGenerator, Optional
 from sqlalchemy.orm import Session
 from langchain_core.messages import HumanMessage, AIMessage
 
-from app.services.session import get_session_manager
-from app.services.rag_agent import get_rag_agent_service
+from app.services.session import SessionManager
+from app.services.rag_agent import RAGAgentService
 
 
 logger = logging.getLogger(__name__)
 
 
-# Initialize singletons locally to decouple from route module
-session_manager = get_session_manager()
-rag_agent_service = get_rag_agent_service()
-
-
 async def generate_sse_response(
     question: str,
     db: Session,
+    session_manager: SessionManager,
+    rag_agent_service: RAGAgentService,
     session_id: Optional[str] = None,
     top_k: int = 8
 ) -> AsyncGenerator[str, None]:
@@ -30,6 +27,8 @@ async def generate_sse_response(
     Args:
         question: User's question
         db: Database session
+        session_manager: Session manager for chat history (injected)
+        rag_agent_service: RAG agent service for generating responses (injected)
         session_id: Optional session ID for chat history
         top_k: Number of articles to retrieve (if search is performed, default: 8)
         

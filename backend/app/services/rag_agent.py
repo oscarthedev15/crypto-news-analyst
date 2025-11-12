@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
 from langchain_core.documents import Document
 
-from app.services.search import get_search_service
-from app.services.llm import get_llm_service
+from app.services.search import SearchService
+from app.services.llm import LLMService
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 class RAGAgentService:
     """RAG Agent service that uses tools for semantic search and query improvement"""
     
-    def __init__(self):
-        self.search_service = get_search_service()
-        self.llm_service = get_llm_service()
+    def __init__(self, search_service: SearchService, llm_service: LLMService):
+        self.search_service = search_service
+        self.llm_service = llm_service
     
     def _perform_search(self, query: str, db: Session, top_k: int = 8) -> tuple[str, List[Document]]:
         """Perform semantic search and return formatted results"""
@@ -321,6 +321,11 @@ def get_rag_agent_service() -> RAGAgentService:
     """Get or create the RAG agent service singleton"""
     global _rag_agent_service
     if _rag_agent_service is None:
-        _rag_agent_service = RAGAgentService()
+        from app.services.search import get_search_service
+        from app.services.llm import get_llm_service
+        _rag_agent_service = RAGAgentService(
+            search_service=get_search_service(),
+            llm_service=get_llm_service()
+        )
     return _rag_agent_service
 
