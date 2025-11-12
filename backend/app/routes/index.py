@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import IndexStats
-from app.services.search import get_search_service, SearchService
+from app.services.index import get_index_service, IndexService
 
 logger = logging.getLogger(__name__)
 
@@ -13,24 +13,24 @@ router = APIRouter(prefix="/api", tags=["index"])
 @router.get("/index-stats")
 async def get_index_stats(
     db: Session = Depends(get_db),
-    search_service: SearchService = Depends(get_search_service)
+    index_service: IndexService = Depends(get_index_service)
 ):
     """Get statistics about the search index"""
-    stats = search_service.get_index_stats(db)
+    stats = index_service.get_index_stats(db)
     return IndexStats(**stats)
 
 
 @router.post("/rebuild-index")
 async def rebuild_index(
     db: Session = Depends(get_db),
-    search_service: SearchService = Depends(get_search_service)
+    index_service: IndexService = Depends(get_index_service)
 ):
     """Manually rebuild Qdrant index (admin only)"""
     try:
         logger.info("Manually rebuilding search index...")
-        search_service.build_index(db)
-        
-        stats = search_service.get_index_stats(db)
+        index_service.build_index(db, recreate=True)
+
+        stats = index_service.get_index_stats(db)
         return {
             "status": "success",
             "message": "Index rebuilt successfully",

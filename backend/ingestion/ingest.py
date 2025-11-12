@@ -22,7 +22,7 @@ sys.path.insert(0, str(backend_dir))
 from app.database import SessionLocal, init_db
 from app.models import Article
 from ingestion.scraper import scrape_all_sources, APPROVED_SOURCES
-from app.services.search import get_search_service, SearchService
+from app.services.index import get_index_service, IndexService
 from typing import Optional
 
 # Configure logging
@@ -37,16 +37,16 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 async def ingest_articles(
-    max_articles: int = 20, 
+    max_articles: int = 20,
     force_rebuild: bool = False,
-    search_service: Optional[SearchService] = None
+    index_service: Optional[IndexService] = None
 ):
     """Fetch and ingest articles from all sources
-    
+
     Args:
         max_articles: Max NEW articles per source to fetch
         force_rebuild: Force rebuild of Qdrant index (unused - index is always rebuilt after ingestion)
-        search_service: Optional SearchService instance (for dependency injection/testing)
+        index_service: Optional IndexService instance (for dependency injection/testing)
     """
     logger.info(f"Starting article ingestion (max {max_articles} NEW per source)...")
     
@@ -115,13 +115,13 @@ async def ingest_articles(
         # Rebuild Qdrant index only if new articles were ingested
         # Note: build_index() requires hybrid search (dense + sparse) and will fail if sparse embeddings unavailable
         # Use provided service or get singleton instance (dependency injection)
-        if search_service is None:
-            search_service = get_search_service()
-        
+        if index_service is None:
+            index_service = get_index_service()
+
         if new_count > 0:
             logger.info("Rebuilding Qdrant index with hybrid search (new articles detected)...")
             try:
-                search_service.build_index(db)
+                index_service.build_index(db, recreate=True)
                 logger.info("Qdrant index rebuilt successfully with hybrid search")
             except RuntimeError as e:
                 logger.error(f"Failed to build index: {e}")
@@ -129,9 +129,9 @@ async def ingest_articles(
                 raise
         else:
             logger.info("No new articles; skipping index rebuild")
-        
+
         # Print index statistics
-        stats = search_service.get_index_stats(db)
+        stats = index_service.get_index_stats(db)
         logger.info(f"Index statistics:")
         logger.info(f"  Indexed articles: {stats['indexed_articles']}")
         logger.info(f"  Date range: {stats['date_range']['oldest']} to {stats['date_range']['newest']}")
