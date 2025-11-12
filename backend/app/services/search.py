@@ -12,7 +12,7 @@ from langchain_core.documents import Document
 from qdrant_client import QdrantClient
 
 from app.models import Article
-from app.services.embeddings import get_embedding_service
+from app.services.embeddings import EmbeddingService
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -23,9 +23,9 @@ COLLECTION_NAME = "crypto_news_articles"
 class SearchService:
     """Service for semantic search using LangChain Qdrant with hybrid search (dense + sparse)"""
     
-    def __init__(self):
+    def __init__(self, embedding_service: EmbeddingService):
         self.vectorstore = None
-        self.embedding_service = get_embedding_service()
+        self.embedding_service = embedding_service
         self.sparse_embeddings = None
         self._index_point_count = None
         self.qdrant_client = None
@@ -377,5 +377,6 @@ def get_search_service() -> SearchService:
     """Get or create the search service singleton"""
     global _search_service
     if _search_service is None:
-        _search_service = SearchService()
+        from app.services.embeddings import get_embedding_service
+        _search_service = SearchService(embedding_service=get_embedding_service())
     return _search_service

@@ -6,27 +6,46 @@ from datetime import datetime
 from typing import Optional
 from app.database import get_db
 from app.schemas import QuestionRequest, IndexStats
-from app.services.moderation import get_moderation_service
-from app.services.search import get_search_service
-from app.services.llm import get_llm_service
-from app.services.session import get_session_manager
+from app.services.moderation import get_moderation_service, ModerationService
+from app.services.search import get_search_service, SearchService
+from app.services.llm import get_llm_service, LLMService
+from app.services.session import get_session_manager, SessionManager
+from app.services.rag_agent import get_rag_agent_service, RAGAgentService
 from app.services.sse import generate_sse_response
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["search"])
 
-# Services
-moderation_service = get_moderation_service()
-search_service = get_search_service()
-llm_service = get_llm_service()
-session_manager = get_session_manager()
+# Dependency functions for FastAPI Depends()
+def get_moderation_service_dep() -> ModerationService:
+    """Dependency to get moderation service"""
+    return get_moderation_service()
+
+def get_search_service_dep() -> SearchService:
+    """Dependency to get search service"""
+    return get_search_service()
+
+def get_llm_service_dep() -> LLMService:
+    """Dependency to get LLM service"""
+    return get_llm_service()
+
+def get_session_manager_dep() -> SessionManager:
+    """Dependency to get session manager"""
+    return get_session_manager()
+
+def get_rag_agent_service_dep() -> RAGAgentService:
+    """Dependency to get RAG agent service"""
+    return get_rag_agent_service()
 
 
 @router.post("/ask")
 async def ask_question(
     request: QuestionRequest,
     db: Session = Depends(get_db),
+    moderation_service: ModerationService = Depends(get_moderation_service_dep),
+    session_manager: SessionManager = Depends(get_session_manager_dep),
+    rag_agent_service: RAGAgentService = Depends(get_rag_agent_service_dep),
     x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
     top_k: int = Query(8, ge=1, le=20, description="Number of articles to retrieve (1-20, default: 8)")
 ):
@@ -35,6 +54,9 @@ async def ask_question(
     Args:
         request: Question request with user question
         db: Database session
+        moderation_service: Moderation service (injected)
+        session_manager: Session manager (injected)
+        rag_agent_service: RAG agent service (injected)
         x_session_id: Optional session ID from header for chat history
         top_k: Number of articles to retrieve if search is performed (default: 8)
         
@@ -50,7 +72,14 @@ async def ask_question(
     
     # Return streaming response
     return StreamingResponse(
-        generate_sse_response(request.question, db, x_session_id, top_k),
+        generate_sse_response(
+            request.question, 
+            db, 
+            session_manager, 
+            rag_agent_service, 
+            x_session_id, 
+            top_k
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -61,7 +90,7 @@ async def ask_question(
 
 
 @router.get("/health")
-async def health_check():
+async def health_check(llm_service: LLMService = Depends(get_llm_service_dep)):
     """Health check endpoint with LLM provider info"""
     provider_info = llm_service.get_provider_info()
     return {
@@ -72,14 +101,20 @@ async def health_check():
 
 
 @router.get("/index-stats")
-async def get_index_stats(db: Session = Depends(get_db)):
+async def get_index_stats(
+    db: Session = Depends(get_db),
+    search_service: SearchService = Depends(get_search_service_dep)
+):
     """Get statistics about the search index"""
     stats = search_service.get_index_stats(db)
     return IndexStats(**stats)
 
 
 @router.post("/rebuild-index")
-async def rebuild_index(db: Session = Depends(get_db)):
+async def rebuild_index(
+    db: Session = Depends(get_db),
+    search_service: SearchService = Depends(get_search_service_dep)
+):
     """Manually rebuild Qdrant index (admin only)"""
     try:
         logger.info("Manually rebuilding search index...")
@@ -97,7 +132,10 @@ async def rebuild_index(db: Session = Depends(get_db)):
 
 
 @router.get("/sources")
-async def get_sources(db: Session = Depends(get_db)):
+async def get_sources(
+    db: Session = Depends(get_db),
+    search_service: SearchService = Depends(get_search_service_dep)
+):
     """Get list of news sources with statistics"""
     stats = search_service.get_index_stats(db)
     
@@ -121,11 +159,15 @@ async def get_sources(db: Session = Depends(get_db)):
 
 
 @router.delete("/session/{session_id}")
-async def clear_session(session_id: str):
+async def clear_session(
+    session_id: str,
+    session_manager: SessionManager = Depends(get_session_manager_dep)
+):
     """Clear a specific chat session
     
     Args:
         session_id: Session ID to clear
+        session_manager: Session manager (injected)
         
     Returns:
         Success message
@@ -140,8 +182,13 @@ async def clear_session(session_id: str):
 
 
 @router.get("/sessions/stats")
-async def get_session_stats():
+async def get_session_stats(
+    session_manager: SessionManager = Depends(get_session_manager_dep)
+):
     """Get statistics about active sessions (admin/debug endpoint)
+    
+    Args:
+        session_manager: Session manager (injected)
     
     Returns:
         Session statistics including active sessions and message counts
