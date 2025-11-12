@@ -373,9 +373,22 @@ class SearchService:
 # Singleton instance
 _search_service = None
 
-def get_search_service() -> SearchService:
-    """Get or create the search service singleton"""
+def get_search_service(embedding_service: Optional[EmbeddingService] = None) -> SearchService:
+    """Get or create the search service singleton
+    
+    Args:
+        embedding_service: Optional EmbeddingService instance (for dependency injection/testing)
+    
+    Returns:
+        SearchService instance
+    """
     global _search_service
+    
+    # If dependency is provided, create a new instance (for testing/DI)
+    if embedding_service is not None:
+        return SearchService(embedding_service=embedding_service)
+    
+    # Otherwise, use singleton pattern
     if _search_service is None:
         from app.services.embeddings import get_embedding_service
         _search_service = SearchService(embedding_service=get_embedding_service())

@@ -8,32 +8,32 @@ from app.schemas import QuestionRequest
 from app.services.moderation import get_moderation_service, ModerationService
 from app.services.session import get_session_manager, SessionManager
 from app.services.rag_agent import get_rag_agent_service, RAGAgentService
+from app.services.llm import get_llm_service, LLMService
+from app.services.search import get_search_service, SearchService
 from app.services.sse import generate_sse_response
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["ask"])
 
-# Dependency functions for FastAPI Depends()
-def get_moderation_service_dep() -> ModerationService:
-    """Dependency to get moderation service"""
-    return get_moderation_service()
 
-def get_session_manager_dep() -> SessionManager:
-    """Dependency to get session manager"""
-    return get_session_manager()
-
-def get_rag_agent_service_dep() -> RAGAgentService:
-    """Dependency to get RAG agent service"""
-    return get_rag_agent_service()
+def get_rag_agent_service_dep(
+    search_service: SearchService = Depends(get_search_service),
+    llm_service: LLMService = Depends(get_llm_service)
+) -> RAGAgentService:
+    """FastAPI dependency to get RAG agent service with injected dependencies"""
+    return get_rag_agent_service(
+        search_service=search_service,
+        llm_service=llm_service
+    )
 
 
 @router.post("/ask")
 async def ask_question(
     request: QuestionRequest,
     db: Session = Depends(get_db),
-    moderation_service: ModerationService = Depends(get_moderation_service_dep),
-    session_manager: SessionManager = Depends(get_session_manager_dep),
+    moderation_service: ModerationService = Depends(get_moderation_service),
+    session_manager: SessionManager = Depends(get_session_manager),
     rag_agent_service: RAGAgentService = Depends(get_rag_agent_service_dep),
     x_session_id: Optional[str] = Header(None, alias="X-Session-Id"),
     top_k: int = Query(8, ge=1, le=20, description="Number of articles to retrieve (1-20, default: 8)")

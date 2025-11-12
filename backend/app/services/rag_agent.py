@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 from langchain_core.messages import HumanMessage, SystemMessage, BaseMessage
 from langchain_core.documents import Document
 
-from app.services.search import SearchService
-from app.services.llm import LLMService
+from app.services.search import SearchService, get_search_service
+from app.services.llm import LLMService, get_llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -317,12 +317,30 @@ Remember: Articles are PRIMARY, general knowledge is SECONDARY and MINIMAL. When
 # Singleton instance
 _rag_agent_service = None
 
-def get_rag_agent_service() -> RAGAgentService:
-    """Get or create the RAG agent service singleton"""
+def get_rag_agent_service(
+    search_service: Optional[SearchService] = None,
+    llm_service: Optional[LLMService] = None
+) -> RAGAgentService:
+    """Get or create the RAG agent service singleton
+    
+    Args:
+        search_service: Optional SearchService instance (for dependency injection)
+        llm_service: Optional LLMService instance (for dependency injection)
+    
+    Returns:
+        RAGAgentService instance
+    """
     global _rag_agent_service
+    
+    # If dependencies are provided, create a new instance (for testing/DI)
+    if search_service is not None or llm_service is not None:
+        return RAGAgentService(
+            search_service=search_service or get_search_service(),
+            llm_service=llm_service or get_llm_service()
+        )
+    
+    # Otherwise, use singleton pattern
     if _rag_agent_service is None:
-        from app.services.search import get_search_service
-        from app.services.llm import get_llm_service
         _rag_agent_service = RAGAgentService(
             search_service=get_search_service(),
             llm_service=get_llm_service()

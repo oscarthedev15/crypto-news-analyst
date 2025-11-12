@@ -6,16 +6,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
-# Dependency function for FastAPI Depends()
-def get_session_manager_dep() -> SessionManager:
-    """Dependency to get session manager"""
-    return get_session_manager()
-
 
 @router.delete("/session/{session_id}")
 async def clear_session(
     session_id: str,
-    session_manager: SessionManager = Depends(get_session_manager_dep)
+    session_manager: SessionManager = Depends(get_session_manager)
 ):
     """Clear a specific chat session
     
@@ -37,7 +32,7 @@ async def clear_session(
 
 @router.get("/sessions/stats")
 async def get_session_stats(
-    session_manager: SessionManager = Depends(get_session_manager_dep)
+    session_manager: SessionManager = Depends(get_session_manager)
 ):
     """Get statistics about active sessions (admin/debug endpoint)
     

@@ -9,16 +9,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["index"])
 
-# Dependency function for FastAPI Depends()
-def get_search_service_dep() -> SearchService:
-    """Dependency to get search service"""
-    return get_search_service()
-
 
 @router.get("/index-stats")
 async def get_index_stats(
     db: Session = Depends(get_db),
-    search_service: SearchService = Depends(get_search_service_dep)
+    search_service: SearchService = Depends(get_search_service)
 ):
     """Get statistics about the search index"""
     stats = search_service.get_index_stats(db)
@@ -28,7 +23,7 @@ async def get_index_stats(
 @router.post("/rebuild-index")
 async def rebuild_index(
     db: Session = Depends(get_db),
-    search_service: SearchService = Depends(get_search_service_dep)
+    search_service: SearchService = Depends(get_search_service)
 ):
     """Manually rebuild Qdrant index (admin only)"""
     try:

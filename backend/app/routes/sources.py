@@ -8,16 +8,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["sources"])
 
-# Dependency function for FastAPI Depends()
-def get_search_service_dep() -> SearchService:
-    """Dependency to get search service"""
-    return get_search_service()
-
 
 @router.get("/sources")
 async def get_sources(
     db: Session = Depends(get_db),
-    search_service: SearchService = Depends(get_search_service_dep)
+    search_service: SearchService = Depends(get_search_service)
 ):
     """Get list of news sources with statistics"""
     stats = search_service.get_index_stats(db)
