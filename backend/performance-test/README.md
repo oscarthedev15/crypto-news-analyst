@@ -10,22 +10,26 @@ python performance-test/test_crypto_news_agent.py
 ```
 
 **Prerequisites:**
+
 - Backend server running on `http://localhost:8000`
-- Search index built (`python scripts/ingest_news.py`)
+- Search index built (`python -m ingestion.ingest`)
 
 ## Test Suite
 
 ### 1. Concurrent Request Handling
+
 - 10 simultaneous requests with various crypto questions
 - Measures response times, success rates, system stability
 
 ### 2. Error Handling
+
 - Invalid inputs (empty, too long, missing fields)
 - Malformed requests, invalid endpoints
 - No-results scenarios
 - Validates proper HTTP status codes (422, 404, 405)
 
 ### 3. Content Moderation
+
 - Threatening/inappropriate content detection
 - Verifies blocking (400) or safe handling (200 with no articles)
 - Logs responses to validate unhelpful/safe content
@@ -33,6 +37,7 @@ python performance-test/test_crypto_news_agent.py
 ## Results
 
 Results are saved to `results/test_results.json` with:
+
 - Overall success rates and performance metrics
 - Response time statistics (min, max, mean, median, std dev)
 - Error breakdown by type
@@ -41,6 +46,7 @@ Results are saved to `results/test_results.json` with:
 ## Output
 
 The test suite provides:
+
 - Console output with formatted results
 - Error explanations for failed tests
 - Sources count and response previews for moderation tests
@@ -53,5 +59,5 @@ The test suite provides:
 curl http://localhost:8000/api/health
 
 # Build search index if needed
-python scripts/ingest_news.py
+python -m ingestion.ingest
 ```

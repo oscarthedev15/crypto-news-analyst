@@ -5,7 +5,7 @@ from app.config import settings
 from app.database import init_db
 from app.services.search import get_search_service
 from app.services.llm import get_llm_service
-from app.routes import ask
+from app.routes import ask, health, index, sources, sessions
 
 # Configure logging
 logging.basicConfig(
@@ -32,6 +32,10 @@ app.add_middleware(
 
 # Include routers
 app.include_router(ask.router)
+app.include_router(health.router)
+app.include_router(index.router)
+app.include_router(sources.router)
+app.include_router(sessions.router)
 
 
 @app.on_event("startup")
@@ -46,7 +50,7 @@ async def startup_event():
     # Load or build Qdrant index
     search_service = get_search_service()
     if not search_service.load_index():
-        logger.warning("Search index not found. Please run: python scripts/ingest_news.py")
+        logger.warning("Search index not found. Please run: python -m ingestion.ingest")
         logger.info("Application started without search index. Data ingestion required.")
     else:
         logger.info("Search index loaded successfully")

@@ -463,3 +463,4 @@ async def scrape_all_sources(
     logger.info(f"✓ Scraped total of {len(all_articles)} NEW articles from all sources")
     
     return all_articles
+
