@@ -117,6 +117,8 @@ if [ "$1" == "--setup" ]; then
     echo "  • Update the vector database (Qdrant index)"
     echo "  • Log output to: backend/logs/cron.log"
     echo ""
+    echo "Note: Script location: $SCRIPT_PATH"
+    echo ""
     echo "To change the schedule, run setup again with desired interval:"
     echo "  ./cron_refresh.sh --setup 5      # Every 5 minutes"
     echo "  ./cron_refresh.sh --setup 10     # Every 10 minutes"
@@ -133,7 +135,8 @@ if [ "$1" == "--setup" ]; then
 fi
 
 # Normal execution: Run the ingestion
-cd "$SCRIPT_DIR/backend"
+# Script is in backend/ingestion/, so go up one level to backend/
+cd "$SCRIPT_DIR/.."
 
 # Activate Python virtual environment if it exists
 if [ -d "venv" ]; then
@@ -147,7 +150,7 @@ mkdir -p logs
 > logs/cron.log
 
 # Run the ingestion script
-python scripts/ingest_news.py --max-articles-per-source 25 >> logs/cron.log 2>&1
+python -m ingestion.ingest --max-articles-per-source 25 >> logs/cron.log 2>&1
 
 # Log completion
 echo "---" >> logs/cron.log

@@ -116,10 +116,65 @@ If you prefer running without Docker, install and run Qdrant natively and ensure
 
 ### 4. Initial Data Ingestion
 
+The ingestion system scrapes articles from crypto news sources and builds the search index.
+
+#### Quick Start
+
 ```bash
-# Fetch and index articles (5-10 minutes)
-python scripts/ingest_news.py --max-articles-per-source 30
+# From backend directory
+cd backend
+python -m ingestion.ingest --max-articles-per-source 30
 ```
+
+#### Ingestion Options
+
+```bash
+# Basic usage (default: 20 articles per source)
+python -m ingestion.ingest
+
+# Custom article count per source
+python -m ingestion.ingest --max-articles-per-source 50
+
+# Force rebuild index (even if no new articles)
+python -m ingestion.ingest --force-rebuild-index
+```
+
+**What it does:**
+
+- Scrapes new articles from CoinTelegraph, DL News, and The Defiant
+- Stores articles in SQLite database
+- Builds/rebuilds Qdrant vector index for semantic search
+- Skips articles that already exist (by URL)
+
+**Expected output:**
+
+- Scraping progress for each source
+- New articles count and statistics
+- Index rebuild confirmation
+- Total articles in database
+
+#### How the Scraper Works
+
+The scraper (`ingestion/scraper.py`) is a standalone module that:
+
+- **Fetches articles** from approved crypto news sources
+- **Validates URLs** using source-specific patterns (e.g., `/news/` prefix, minimum slug length)
+- **Extracts content** by cleaning HTML and removing noise (ads, navigation, etc.)
+- **Deduplicates** by checking existing URLs in the database
+- **Rate limits** requests to be respectful to source websites
+
+**Supported sources:**
+
+- CoinTelegraph (`cointelegraph.com`)
+- The Defiant (`thedefiant.io`)
+- DL News (`dlnews.com`)
+
+**Scraper features:**
+
+- Automatic retry with exponential backoff
+- Network timeout handling
+- Content validation (minimum title/content length)
+- Concurrent scraping across all sources
 
 ---
 
@@ -174,29 +229,52 @@ See [Testing Guide](./backend/performance-test/README.md) for detailed documenta
 
 ## ⏰ Automated Data Refresh
 
-Set up cron job to auto-refresh articles:
+Set up a cron job to automatically refresh articles on a schedule.
+
+### Setup Cron Job
 
 ```bash
-# Default: every minute
+# From project root
+cd backend/ingestion
 ./cron_refresh.sh --setup
 
-# Other options
+# Other schedule options
 ./cron_refresh.sh --setup 5       # Every 5 minutes
 ./cron_refresh.sh --setup 10      # Every 10 minutes
 ./cron_refresh.sh --setup hourly  # Every hour
 ./cron_refresh.sh --setup daily   # Daily at midnight
 ```
 
+### Manual Run
+
+You can also run the ingestion manually:
+
+```bash
+cd backend/ingestion
+./cron_refresh.sh
+```
+
 **Features:**
 
 - ✅ Auto-fetches new articles from all sources
-- ✅ Rebuilds search indexes
+- ✅ Rebuilds search indexes automatically
 - ✅ Server picks up changes **without restart**
+- ✅ Logs all activity for monitoring
 
-Monitor logs:
+**Monitor logs:**
 
 ```bash
 tail -f backend/logs/cron.log
+```
+
+**Cron management:**
+
+```bash
+# List active cron jobs
+crontab -l
+
+# Remove cron job
+crontab -r
 ```
 
 ---
@@ -262,7 +340,7 @@ SIMILARITY_THRESHOLD=0.3
 
 **Search Issues:**
 
-- **"Search index not found"**: Run `python backend/scripts/ingest_news.py`
+- **"Search index not found"**: Run `cd backend && python -m ingestion.ingest`
 - **No articles found**: Increase count: `--max-articles-per-source 50`
 - **Search not working**: Rebuild: `POST http://localhost:8000/api/rebuild-index`
 

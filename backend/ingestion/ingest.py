@@ -4,8 +4,8 @@ News ingestion script to fetch and store articles in the database.
 Run periodically via cron job or manually.
 
 Usage:
-    python scripts/ingest_news.py --max-articles-per-source 25
-    python scripts/ingest_news.py --force-rebuild-index
+    python -m ingestion.ingest --max-articles-per-source 25
+    python -m ingestion.ingest --force-rebuild-index
 """
 
 import sys
@@ -15,13 +15,15 @@ import logging
 from pathlib import Path
 from datetime import datetime
 
-# Add parent directory to path so we can import app modules
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add backend directory to path so we can import app modules
+backend_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_dir))
 
 from app.database import SessionLocal, init_db
 from app.models import Article
-from app.services.scraper import scrape_all_sources, APPROVED_SOURCES
-from app.services.search import get_search_service
+from ingestion.scraper import scrape_all_sources, APPROVED_SOURCES
+from app.services.search import get_search_service, SearchService
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(
@@ -34,12 +36,17 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
+async def ingest_articles(
+    max_articles: int = 20, 
+    force_rebuild: bool = False,
+    search_service: Optional[SearchService] = None
+):
     """Fetch and ingest articles from all sources
     
     Args:
         max_articles: Max NEW articles per source to fetch
         force_rebuild: Force rebuild of Qdrant index (unused - index is always rebuilt after ingestion)
+        search_service: Optional SearchService instance (for dependency injection/testing)
     """
     logger.info(f"Starting article ingestion (max {max_articles} NEW per source)...")
     
@@ -107,7 +114,10 @@ async def ingest_articles(max_articles: int = 20, force_rebuild: bool = False):
         
         # Rebuild Qdrant index only if new articles were ingested
         # Note: build_index() requires hybrid search (dense + sparse) and will fail if sparse embeddings unavailable
-        search_service = get_search_service()
+        # Use provided service or get singleton instance (dependency injection)
+        if search_service is None:
+            search_service = get_search_service()
+        
         if new_count > 0:
             logger.info("Rebuilding Qdrant index with hybrid search (new articles detected)...")
             try:
@@ -168,3 +178,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
